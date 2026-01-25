@@ -1,0 +1,819 @@
+  :root {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+          sans-serif;
+      font-size: 14px;
+      line-height: 1.5;
+      color: #2c3e50;
+      background-color: #f0f2f5;
+  }
+
+  :global(body) {
+      margin: 0;
+      overflow: hidden;
+
+  }
+
+  * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      user-select: none;
+  }
+
+  .app-container {
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      overflow: hidden;
+  }
+
+  .header {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      padding: 0.5rem 1rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+  }
+
+  .header-title {
+      display: flex;
+      align-items: baseline;
+      gap: 0.5rem;
+  }
+
+  .header h1 {
+      font-size: 1.2rem;
+      font-weight: 600;
+  }
+
+  .header .subtitle {
+      font-size: 0.85rem;
+      opacity: 0.8;
+      font-weight: 400;
+  }
+
+  .header-stats {
+      display: flex;
+      gap: 1rem;
+      font-size: 0.9rem;
+      opacity: 0.9;
+  }
+
+  .main-content {
+      display: flex;
+      flex-direction: column;
+      flex: 1;
+      overflow: hidden;
+      gap: 0.5rem;
+      padding: 0.5rem;
+  }
+
+  /* 上部接收面板 */
+  .top-panel {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      min-height: 0;
+  }
+
+  /* 下部面板容器 */
+  .bottom-panel {
+      display: flex;
+      gap: 0.5rem;
+      height: 210px;
+      min-height: 210px;
+      flex-shrink: 0;
+  }
+
+  /* 左侧配置面板 */
+  .config-panel {
+      width: 240px;
+      min-width: 240px;
+      background: white;
+      border-radius: 6px;
+      padding: 0.5rem;
+      display: flex;
+      flex-direction: column;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+      overflow: hidden;
+  }
+
+  .config-content {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 0.35rem;
+      overflow-y: auto;
+      min-height: 0;
+  }
+
+  /* 右下发送面板 */
+  .send-panel {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+      min-width: 0;
+  }
+
+  .config-section {
+      padding-bottom: 0.3rem;
+      border-bottom: 1px solid #e8ecef;
+  }
+
+  .config-section:last-child {
+      border-bottom: none;
+      padding-bottom: 0;
+  }
+
+  .config-section.compact {
+      display: flex;
+      flex-direction: column;
+      gap: 0.25rem;
+  }
+
+  /* 连接类型按钮网格 */
+  .conn-type-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0.2rem;
+  }
+
+  .conn-type-grid button {
+      padding: 0.3rem 0.5rem;
+      border: 1px solid #d1d9e0;
+      background: white;
+      border-radius: 4px;
+      font-size: 0.8rem;
+      cursor: pointer;
+      transition: all 0.15s;
+  }
+
+  .conn-type-grid button:hover:not(:disabled) {
+      background: #f5f7fa;
+      border-color: #667eea;
+  }
+
+  .conn-type-grid button.active {
+      background: #667eea;
+      color: white;
+      border-color: #667eea;
+  }
+
+  .conn-type-grid button:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+  }
+
+  /* 表单行 */
+  .form-row {
+      display: flex;
+      align-items: center;
+      gap: 0.3rem;
+  }
+
+  .form-row label {
+      font-size: 0.8rem;
+      color: #5a6c7d;
+      min-width: 50px;
+      flex-shrink: 0;
+  }
+
+  .form-row input,
+  .form-row select {
+      flex: 1;
+      padding: 0.25rem 0.5rem;
+      border: 1px solid #d1d9e0;
+      border-radius: 4px;
+      font-size: 0.85rem;
+      background: white;
+  }
+
+  .form-row input:focus,
+  .form-row select:focus {
+      outline: none;
+      border-color: #667eea;
+  }
+
+  .form-row input:disabled,
+  .form-row select:disabled {
+      background: #f5f7fa;
+      color: #95a5a6;
+  }
+
+  .form-row-inline {
+      display: flex;
+      gap: 0.25rem;
+  }
+
+  .form-col {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 0.1rem;
+  }
+
+  .form-col label {
+      font-size: 0.75rem;
+      color: #5a6c7d;
+  }
+
+  .form-col select {
+      padding: 0.25rem;
+      border: 1px solid #d1d9e0;
+      border-radius: 4px;
+      font-size: 0.8rem;
+  }
+
+  .form-col select:disabled {
+      background: #f5f7fa;
+      color: #95a5a6;
+  }
+
+  .input-with-button {
+      display: flex;
+      gap: 0.3rem;
+      flex: 1;
+  }
+
+  .input-with-button select {
+      flex: 1;
+  }
+
+  /* 连接按钮 */
+  .connect-btn {
+      width: 100%;
+      padding: 0.4rem;
+      background: #667eea;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      font-size: 0.95rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+      margin-top: auto;
+      flex-shrink: 0;
+  }
+
+  .connect-btn:hover {
+      background: #5568d3;
+  }
+
+  .connect-btn.connected {
+      background: #e74c3c;
+  }
+
+  .connect-btn.connected:hover {
+      background: #c0392b;
+  }
+
+  /* 图标按钮 */
+  .icon-btn {
+      padding: 0.25rem 0.4rem;
+      background: white;
+      border: 1px solid #d1d9e0;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 0.85rem;
+      line-height: 1;
+  }
+
+  .icon-btn:hover:not(:disabled) {
+      background: #f5f7fa;
+      border-color: #667eea;
+  }
+
+  .icon-btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+  }
+
+  .receive-area {
+      flex: 1;
+      background: white;
+      border-radius: 6px;
+      display: flex;
+      flex-direction: column;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+      min-height: 0;
+      overflow: hidden;
+  }
+
+  .receive-header {
+      display: flex;
+      background: #f5f7fa;
+      border-bottom: 1px solid #e8ecef;
+      padding: 0.4rem 0.5rem;
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: #5a6c7d;
+  }
+
+  .receive-header .receive-label {
+      flex: 1;
+      text-align: center;
+  }
+
+  .receive-header .receive-label:first-child {
+      border-right: 1px solid #e8ecef;
+  }
+
+  .receive-header .hex-label {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+  }
+
+  .toggle-hex-btn {
+      background: none;
+      border: none;
+      color: #9ca3af;
+      cursor: pointer;
+      font-size: 0.7rem;
+      padding: 0 0.2rem;
+      line-height: 1;
+  }
+
+  .toggle-hex-btn:hover {
+      color: #ef4444;
+  }
+
+  .show-hex-btn {
+      background: #667eea;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      padding: 0.2rem 0.5rem;
+      font-size: 0.7rem;
+      cursor: pointer;
+      margin-left: 0.5rem;
+  }
+
+  .show-hex-btn:hover {
+      background: #5a67d8;
+  }
+
+  .receive-container {
+      flex: 1;
+      overflow-y: auto;
+      font-family: "Consolas", "Monaco", "Courier New", monospace;
+      font-size: 0.9rem;
+      line-height: 1.6;
+  }
+
+  .data-row {
+      display: flex;
+      border-bottom: 1px solid #f0f2f5;
+  }
+
+  .data-row:hover {
+      background: #f9fafb;
+  }
+
+  .data-row.rx .direction {
+      color: #10b981;
+  }
+
+  .data-row.tx .direction {
+      color: #3b82f6;
+  }
+
+  .data-row.system .direction {
+      color: #f59e0b;
+  }
+
+  .data-row.system {
+      background: #fffbeb;
+  }
+
+  .ascii-col,
+  .hex-col {
+      flex: 1;
+      padding: 0.3rem 0.5rem;
+      word-break: break-all;
+      white-space: pre-wrap;
+      overflow: hidden;
+      min-width: 0;
+      max-width: 50%;
+  }
+
+  .ascii-col {
+      border-right: 1px solid #e8ecef;
+  }
+
+  .ascii-col.full-width {
+      max-width: 100%;
+      border-right: none;
+  }
+
+  .byte-char,
+  .byte-hex {
+      cursor: pointer;
+      padding: 0 1px;
+      border-radius: 2px;
+      user-select: none;
+  }
+
+  .byte-char:hover,
+  .byte-hex:hover {
+      background: #e0e7ff;
+  }
+
+  .byte-char.selected,
+  .byte-hex.selected {
+      background: #667eea;
+      color: white;
+  }
+
+  .timestamp {
+      color: #9ca3af;
+      margin-right: 0.3rem;
+  }
+
+  .direction {
+      font-weight: 500;
+      margin-right: 0.3rem;
+  }
+
+  .data-content {
+      color: #374151;
+  }
+
+  .system-text {
+      color: #92400e;
+  }
+
+  .placeholder {
+      padding: 1rem;
+      text-align: center;
+      color: #9ca3af;
+      font-style: italic;
+  }
+
+  /* 中间工具栏 */
+  .toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: white;
+      border-radius: 6px;
+      padding: 0.4rem 0.6rem;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+      gap: 0.5rem;
+      flex-shrink: 0;
+  }
+
+  .toolbar-left,
+  .toolbar-center,
+  .toolbar-right {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+  }
+
+  .toolbar-checkbox {
+      display: flex;
+      align-items: center;
+      gap: 0.25rem;
+      font-size: 0.85rem;
+      color: #5a6c7d;
+      cursor: pointer;
+      white-space: nowrap;
+  }
+
+  .toolbar-checkbox input {
+      margin: 0;
+  }
+
+  .toolbar-label {
+      font-size: 0.85rem;
+      color: #5a6c7d;
+  }
+
+  .encoding-select,
+  .line-ending-select {
+      padding: 0.25rem 0.5rem;
+      border: 1px solid #d1d9e0;
+      background: white;
+      border-radius: 4px;
+      font-size: 0.85rem;
+      cursor: pointer;
+      color: #374151;
+  }
+
+  .encoding-select:hover,
+  .line-ending-select:hover {
+      border-color: #667eea;
+  }
+
+  .encoding-select:focus,
+  .line-ending-select:focus {
+      outline: none;
+      border-color: #667eea;
+      box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.2);
+  }
+
+  .toolbar-center button {
+      padding: 0.3rem 0.6rem;
+      border: 1px solid #d1d9e0;
+      background: white;
+      border-radius: 4px;
+      font-size: 0.85rem;
+      cursor: pointer;
+  }
+
+  .toolbar-center button:hover {
+      background: #f5f7fa;
+  }
+
+  .toolbar-center button.active {
+      background: #667eea;
+      color: white;
+      border-color: #667eea;
+  }
+
+  .toolbar-btn {
+      padding: 0.3rem 0.6rem;
+      border: 1px solid #d1d9e0;
+      background: white;
+      border-radius: 4px;
+      font-size: 0.85rem;
+      cursor: pointer;
+      white-space: nowrap;
+  }
+
+  .toolbar-btn:hover {
+      background: #f5f7fa;
+      border-color: #667eea;
+  }
+
+  .send-area {
+      flex: 1;
+      background: white;
+      border-radius: 6px;
+      padding: 0.5rem;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+      min-height: 0;
+  }
+
+  textarea {
+      flex: 1;
+      border: 1px solid #e8ecef;
+      border-radius: 4px;
+      padding: 0.5rem;
+      font-family: "Consolas", "Monaco", monospace;
+      font-size: 0.8rem;
+      resize: none;
+      line-height: 1.4;
+      background: #fafbfc;
+      color: #2c3e50;
+  }
+
+  textarea:focus {
+      outline: none;
+      border-color: #667eea;
+  }
+
+  textarea:disabled {
+      background: #f5f7fa;
+      color: #95a5a6;
+  }
+
+  textarea::placeholder {
+      color: #adb5bd;
+  }
+
+  /* 发送输入组 */
+  .send-input-group {
+      display: flex;
+      gap: 0.5rem;
+      height: 100%;
+  }
+
+  .send-input-group textarea {
+      flex: 1;
+  }
+
+  .send-buttons {
+      display: flex;
+      flex-direction: column;
+      gap: 0.4rem;
+  }
+
+  .send-btn {
+      padding: 0 1rem;
+      background: #27ae60;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      font-size: 0.85rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.15s;
+      flex: 1;
+  }
+
+  .send-btn:hover:not(:disabled) {
+      background: #229954;
+  }
+
+  .send-btn:disabled {
+      background: #95a5a6;
+      cursor: not-allowed;
+  }
+
+  .timer-group {
+      display: flex;
+      align-items: center;
+      gap: 0.25rem;
+  }
+
+  .timer-btn {
+      padding: 0.25rem 0.5rem;
+      background: #3498db;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.15s;
+      white-space: nowrap;
+  }
+
+  .timer-btn:hover:not(:disabled) {
+      background: #2980b9;
+  }
+
+  .timer-btn.active {
+      background: #e74c3c;
+  }
+
+  .timer-btn.active:hover:not(:disabled) {
+      background: #c0392b;
+  }
+
+  .timer-btn:disabled {
+      background: #95a5a6;
+      cursor: not-allowed;
+  }
+
+  .timer-input {
+      width: 60px;
+      padding: 0.2rem 0.3rem;
+      border: 1px solid #d1d9e0;
+      border-radius: 4px;
+      font-size: 0.75rem;
+      text-align: center;
+  }
+
+  .timer-input:focus {
+      outline: none;
+      border-color: #667eea;
+  }
+
+  .timer-input:disabled {
+      background: #f5f7fa;
+      color: #95a5a6;
+  }
+
+  .timer-unit {
+      font-size: 0.7rem;
+      color: #6b7280;
+  }
+
+  /* 滚动条 */
+  ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+  }
+
+  ::-webkit-scrollbar-track {
+      background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+      background: #c1c9d2;
+      border-radius: 3px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+      background: #a8b4c0;
+  }
+
+  /* 暗色模式 */
+  @media (prefers-color-scheme: dark) {
+      :root {
+          color: #e4e6eb;
+          background-color: #18191a;
+      }
+
+      .config-panel,
+      .receive-area,
+      .send-area,
+      .toolbar {
+          background: #242526;
+      }
+
+      .config-section {
+          border-bottom-color: #3a3b3c;
+      }
+
+      .form-row label,
+      .form-col label,
+      .toolbar-checkbox,
+      .toolbar-label {
+          color: #b0b3b8;
+      }
+
+      .form-row input,
+      .form-row select,
+      .form-col select,
+      .conn-type-grid button,
+      .toolbar-center button,
+      .toolbar-btn,
+      .icon-btn {
+          background: #3a3b3c;
+          border-color: #3a3b3c;
+          color: #e4e6eb;
+      }
+
+      .form-row input:disabled,
+      .form-row select:disabled,
+      .form-col select:disabled {
+          background: #242526;
+          color: #8a8d91;
+      }
+
+      .conn-type-grid button:hover:not(:disabled),
+      .toolbar-center button:hover,
+      .toolbar-btn:hover,
+      .icon-btn:hover:not(:disabled) {
+          background: #4e4f50;
+      }
+
+      textarea {
+          background: #3a3b3c;
+          border-color: #3a3b3c;
+          color: #e4e6eb;
+      }
+
+      textarea:disabled {
+          background: #242526;
+          color: #8a8d91;
+      }
+
+      ::-webkit-scrollbar-thumb {
+          background: #4e4f50;
+      }
+
+      ::-webkit-scrollbar-thumb:hover {
+          background: #5a5b5c;
+      }
+  }
+
+  /* 右键菜单样式 */
+  .context-menu-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 999;
+  }
+
+  .context-menu {
+      position: fixed;
+      z-index: 1000;
+      background: white;
+      border: 1px solid #d1d9e0;
+      border-radius: 6px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+      padding: 0.25rem 0;
+      min-width: 120px;
+  }
+
+  .context-menu-item {
+      display: block;
+      width: 100%;
+      padding: 0.5rem 1rem;
+      text-align: left;
+      background: none;
+      border: none;
+      cursor: pointer;
+      font-size: 0.85rem;
+      color: #374151;
+  }
+
+  .context-menu-item:hover {
+      background: #f3f4f6;
+  }
+
+  .context-menu-item:active {
+      background: #e5e7eb;
+  }
