@@ -9,6 +9,10 @@
 </p>
 
 <p align="center">
+  🤖 本项目 99% 的代码由 AI 完成
+</p>
+
+<p align="center">
   <a href="#功能特性">功能特性</a> •
   <a href="#截图预览">截图预览</a> •
   <a href="#下载安装">下载安装</a> •
