@@ -49,6 +49,7 @@
   // 数据显示
   interface DataLine {
     type: "rx" | "tx" | "system";
+    direction: "rx" | "tx" | "system"; // 方向标识
     data: Uint8Array | null; // null 表示系统消息
     text: string; // 系统消息或原始文本
     timestamp?: string;
@@ -373,6 +374,7 @@
   function appendDataLine(type: "rx" | "tx", data: Uint8Array) {
     const line: DataLine = {
       type,
+      direction: type,
       data,
       text: "",
       timestamp: showTimestamp ? new Date().toLocaleTimeString() : undefined,
@@ -385,6 +387,7 @@
   function appendSystemMessage(text: string) {
     const line: DataLine = {
       type: "system",
+      direction: "system",
       data: null,
       text,
       timestamp: showTimestamp ? new Date().toLocaleTimeString() : undefined,
@@ -758,11 +761,7 @@
 
   // HEX区右键菜单
   function handleHexContextMenu(event: MouseEvent) {
-    if (
-      selectedLine !== null &&
-      selectedStart !== null &&
-      selectedEnd !== null
-    ) {
+    if (selStartLine !== null && selStartByte !== null && selEndByte !== null) {
       event.preventDefault();
       contextMenuType = "hex";
       contextMenuX = event.clientX;
@@ -773,11 +772,7 @@
 
   // 文本区右键菜单
   function handleTextContextMenu(event: MouseEvent) {
-    if (
-      selectedLine !== null &&
-      selectedStart !== null &&
-      selectedEnd !== null
-    ) {
+    if (selStartLine !== null && selStartByte !== null && selEndByte !== null) {
       event.preventDefault();
       contextMenuType = "text";
       contextMenuX = event.clientX;
@@ -910,7 +905,7 @@
   });
 
   // 监听连接方式变化，如果有 transceiver 实例（已连接或正在连接）则断开
-  let prevConnectionType = connectionType;
+  let prevConnectionType: "serial" | "tcp" | "tcpserver" | "udp" = "serial";
   $effect(() => {
     const currentType = connectionType;
     // 只有当值真正发生变化时才处理
@@ -1382,10 +1377,15 @@
 
 <!-- 右键菜单 -->
 {#if contextMenuVisible}
-  <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
     class="context-menu-overlay"
     onclick={closeContextMenu}
+    onkeydown={(e) => {
+      if (e.key === "Escape") closeContextMenu();
+    }}
+    role="button"
+    tabindex="-1"
     style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 999;"
   ></div>
   <div
