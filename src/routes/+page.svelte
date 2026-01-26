@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { invoke } from "@tauri-apps/api/core";
+  import { listen, type UnlistenFn } from "@tauri-apps/api/event";
   import { save } from "@tauri-apps/plugin-dialog";
   import { writeTextFile } from "@tauri-apps/plugin-fs";
   import * as iconv from "iconv-lite";
@@ -108,44 +110,12 @@
   // 获取本机IP地址列表
   async function refreshLocalIps() {
     try {
-      // 使用WebRTC获取本机IP
-      const ips = new Set<string>(["0.0.0.0", "127.0.0.1"]);
-
-      // 尝试通过RTCPeerConnection获取本机IP
-      try {
-        const pc = new RTCPeerConnection({ iceServers: [] });
-        pc.createDataChannel("");
-        const offer = await pc.createOffer();
-        await pc.setLocalDescription(offer);
-
-        await new Promise<void>((resolve) => {
-          pc.onicecandidate = (event) => {
-            if (!event.candidate) {
-              resolve();
-              return;
-            }
-            const candidate = event.candidate.candidate;
-            const match = candidate.match(/(\d+\.\d+\.\d+\.\d+)/);
-            if (match && match[1]) {
-              const ip = match[1];
-              // 排除一些特殊地址
-              if (!ip.startsWith("0.") && ip !== "0.0.0.0") {
-                ips.add(ip);
-              }
-            }
-          };
-          // 超时处理
-          setTimeout(resolve, 1000);
-        });
-
-        pc.close();
-      } catch (e) {
-        console.log("无法通过WebRTC获取IP:", e);
-      }
-
-      localIpAddresses = Array.from(ips);
+      // 通过后端 Rust 获取本机IP
+      const ips = await invoke<string[]>("get_local_ips");
+      localIpAddresses = ips;
     } catch (error) {
       console.error("获取本机IP失败:", error);
+      localIpAddresses = ["0.0.0.0", "127.0.0.1"];
     }
   }
 
@@ -295,6 +265,8 @@
     } catch (error) {
       console.error("发送失败:", error);
       appendSystemMessage(`发送失败: ${error}`);
+      // 发送异常后自动断开连接
+      await disconnect();
     }
   }
 
@@ -894,14 +866,32 @@
 
   // 初始化：加载设置并刷新串口
   let initialized = false;
+  let unlistenUsb: UnlistenFn | null = null;
+
   $effect(() => {
     loadSettings();
     refreshPorts();
     refreshLocalIps();
+
+    // 监听 USB 设备变化事件
+    listen("usb-device-changed", () => {
+      console.log("USB 设备变化，刷新串口列表");
+      refreshPorts();
+    }).then((unlisten) => {
+      unlistenUsb = unlisten;
+    });
+
     // 延迟设置初始化标志，避免首次加载触发断开
     setTimeout(() => {
       initialized = true;
     }, 100);
+
+    // 清理函数
+    return () => {
+      if (unlistenUsb) {
+        unlistenUsb();
+      }
+    };
   });
 
   // 监听连接方式变化，如果有 transceiver 实例（已连接或正在连接）则断开
@@ -946,7 +936,8 @@
   });
 </script>
 
-<main class="app-container">
+<!-- svelte-ignore a11y_no_static_element_interactions -->
+<main class="app-container" oncontextmenu={(e) => e.preventDefault()}>
   <header class="header">
     <div class="header-title">
       <h1>SerialMate</h1>
@@ -1340,6 +1331,7 @@
             <textarea
               bind:value={sendData}
               placeholder={hexSend ? "HEX: 01 02 03 FF" : "输入发送数据..."}
+              oncontextmenu={(e) => e.stopPropagation()}
             ></textarea>
             <div class="send-buttons">
               <button

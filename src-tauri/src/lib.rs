@@ -1,7 +1,145 @@
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
+use local_ip_address::list_afinet_netifas;
+
+#[cfg(windows)]
+mod usb_monitor {
+    use std::sync::OnceLock;
+    use tauri::{AppHandle, Emitter};
+    use windows::core::*;
+    use windows::Win32::Foundation::*;
+    use windows::Win32::System::LibraryLoader::GetModuleHandleW;
+    use windows::Win32::UI::WindowsAndMessaging::*;
+
+    const DBT_DEVNODES_CHANGED: u32 = 0x0007;
+
+    static APP_HANDLE: OnceLock<AppHandle> = OnceLock::new();
+
+    pub fn start_usb_monitor(app: AppHandle) {
+        let _ = APP_HANDLE.set(app);
+
+        std::thread::spawn(|| {
+            unsafe {
+                let instance = GetModuleHandleW(None).unwrap_or_default();
+
+                let wc = WNDCLASSEXW {
+                    cbSize: std::mem::size_of::<WNDCLASSEXW>() as u32,
+                    lpfnWndProc: Some(window_proc),
+                    hInstance: instance.into(),
+                    lpszClassName: w!("SerialMateUSBMonitor"),
+                    ..Default::default()
+                };
+
+                let atom = RegisterClassExW(&wc);
+                if atom == 0 {
+                    eprintln!("Failed to register window class");
+                    return;
+                }
+
+                // 创建一个普通的隐藏窗口以接收广播消息
+                let hwnd = CreateWindowExW(
+                    WINDOW_EX_STYLE::default(),
+                    w!("SerialMateUSBMonitor"),
+                    w!("USB Monitor"),
+                    WINDOW_STYLE::default(),
+                    0,
+                    0,
+                    0,
+                    0,
+                    None,
+                    None,
+                    instance,
+                    None,
+                );
+
+                match hwnd {
+                    Ok(h) => {
+                        println!("USB monitor window created: {:?}", h);
+                    }
+                    Err(e) => {
+                        eprintln!("Failed to create USB monitor window: {:?}", e);
+                        return;
+                    }
+                }
+
+                let mut msg = MSG::default();
+                while GetMessageW(&mut msg, None, 0, 0).as_bool() {
+                    let _ = TranslateMessage(&msg);
+                    DispatchMessageW(&msg);
+                }
+            }
+        });
+    }
+
+    unsafe extern "system" fn window_proc(
+        hwnd: HWND,
+        msg: u32,
+        wparam: WPARAM,
+        lparam: LPARAM,
+    ) -> LRESULT {
+        if msg == WM_DEVICECHANGE {
+            let event_type = wparam.0 as u32;
+            // DBT_DEVNODES_CHANGED 是设备树变化的通用通知
+            if event_type == DBT_DEVNODES_CHANGED {
+                println!("USB device changed detected");
+                if let Some(app) = APP_HANDLE.get() {
+                    let _ = app.emit("usb-device-changed", ());
+                }
+            }
+        }
+        DefWindowProcW(hwnd, msg, wparam, lparam)
+    }
+}
+
 #[tauri::command]
 fn greet(name: &str) -> String {
     format!("Hello, {}! You've been greeted from Rust!", name)
+}
+
+#[tauri::command]
+fn get_local_ips() -> Vec<String> {
+    let mut ips = vec!["0.0.0.0".to_string(), "127.0.0.1".to_string()];
+
+    // 虚拟机/容器网卡名称关键字（小写匹配）
+    let virtual_keywords = [
+        "vmware",
+        "vmnet",
+        "vbox",
+        "virtualbox",
+        "docker",
+        "veth",
+        "br-",
+        "virbr",
+        "hyper-v",
+        "vethernet",
+        "wsl",
+        "podman",
+        "container",
+        "lima",
+        "multipass",
+        "parallels",
+        "qemu",
+    ];
+
+    if let Ok(network_interfaces) = list_afinet_netifas() {
+        for (name, ip) in network_interfaces {
+            // 检查是否是虚拟网卡
+            let name_lower = name.to_lowercase();
+            let is_virtual = virtual_keywords.iter().any(|kw| name_lower.contains(kw));
+
+            if is_virtual {
+                continue;
+            }
+
+            if let std::net::IpAddr::V4(ipv4) = ip {
+                let ip_str = ipv4.to_string();
+                if !ips.contains(&ip_str) {
+                    ips.push(ip_str);
+                }
+            }
+        }
+    }
+
+    ips
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -13,7 +151,12 @@ pub fn run() {
         .plugin(tauri_plugin_tcp::init())
         .plugin(tauri_plugin_udp::init())
         .plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![greet])
+        .invoke_handler(tauri::generate_handler![greet, get_local_ips])
+        .setup(|app| {
+            #[cfg(windows)]
+            usb_monitor::start_usb_monitor(app.handle().clone());
+            Ok(())
+        })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
