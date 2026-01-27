@@ -385,8 +385,28 @@
       flex: 1;
       overflow-y: auto;
       font-family: "Consolas", "Monaco", "Courier New", monospace;
-      font-size: 0.9rem;
-      line-height: 1.6;
+      font-size: 0.85rem;
+      line-height: 1.3;
+  }
+
+  /* 纯文本模式的 textarea */
+  .receive-textarea {
+      flex: 1;
+      width: 100%;
+      border: none;
+      outline: none;
+      resize: none;
+      background: transparent;
+      font-family: "Consolas", "Monaco", "Courier New", monospace;
+      font-size: 0.85rem;
+      line-height: 1.3;
+      padding: 0.3rem 0.5rem;
+      color: #2c3e50;
+      user-select: text;
+  }
+
+  .receive-textarea::placeholder {
+      color: #a0aec0;
   }
 
   .data-row {
@@ -417,7 +437,7 @@
   .ascii-col,
   .hex-col {
       flex: 1;
-      padding: 0.3rem 0.5rem;
+      padding: 0.15rem 0.5rem;
       word-break: break-all;
       white-space: pre-wrap;
       overflow: hidden;
@@ -427,11 +447,6 @@
 
   .ascii-col {
       border-right: 1px solid #e8ecef;
-  }
-
-  .ascii-col.full-width {
-      max-width: 100%;
-      border-right: none;
   }
 
   .byte-char,

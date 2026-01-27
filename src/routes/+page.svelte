@@ -70,6 +70,30 @@
   let showHexArea = $state(true);
   let lineEnding = $state<"none" | "crlf" | "cr" | "lf">("none");
 
+  // 保存的滚动位置（用于 HEX 切换时保持位置）
+  let savedScrollRatio = 0;
+
+  // 切换 HEX 显示，保持滚动位置
+  function toggleHexArea(show: boolean) {
+    const container = document.getElementById("receive-container");
+    if (container) {
+      // 保存当前滚动比例
+      const scrollHeight = container.scrollHeight - container.clientHeight;
+      savedScrollRatio =
+        scrollHeight > 0 ? container.scrollTop / scrollHeight : 0;
+    }
+    showHexArea = show;
+    // 恢复滚动位置
+    setTimeout(() => {
+      const newContainer = document.getElementById("receive-container");
+      if (newContainer) {
+        const newScrollHeight =
+          newContainer.scrollHeight - newContainer.clientHeight;
+        newContainer.scrollTop = savedScrollRatio * newScrollHeight;
+      }
+    }, 10);
+  }
+
   // 定时发送
   let timerEnabled = $state(false);
   let timerInterval = $state(1000); // 毫秒
@@ -961,92 +985,93 @@
               HEX
               <button
                 class="toggle-hex-btn"
-                onclick={() => (showHexArea = false)}
+                onclick={() => toggleHexArea(false)}
                 title="隐藏HEX区">✕</button
               >
             </span>
           {:else}
             <button
               class="show-hex-btn"
-              onclick={() => (showHexArea = true)}
+              onclick={() => toggleHexArea(true)}
               title="显示HEX区">显示HEX</button
             >
           {/if}
         </div>
-        <!-- svelte-ignore a11y_no_static_element_interactions -->
-        <div
-          id="receive-container"
-          class="receive-container"
-          onkeydown={handleKeydown}
-          onmousedown={(e) => {
-            // 只有点击空白区域（不是 byte 元素）时才清除选择
-            const target = e.target as HTMLElement;
-            if (
-              !target.classList.contains("byte-char") &&
-              !target.classList.contains("byte-hex")
-            ) {
-              clearSelection();
-            }
-          }}
-          tabindex="0"
-          role="textbox"
-          aria-label="接收数据区域"
-          aria-readonly="true"
-        >
-          {#each dataLines as line, lineIdx}
-            <div class="data-row {line.direction}">
-              <!-- svelte-ignore a11y_no_static_element_interactions -->
-              <div class="ascii-col" class:full-width={!showHexArea}>
-                {#if showTimestamp && line.timestamp}
-                  <span class="timestamp">{line.timestamp}</span>
-                {/if}
-                <span class="direction"
-                  >{line.direction === "rx"
-                    ? "←"
-                    : line.direction === "tx"
-                      ? "→"
-                      : "●"}</span
-                >
-                {#if line.data}
-                  <!-- svelte-ignore a11y_no_static_element_interactions -->
-                  <span class="data-content"
-                    >{#each parseDataToChars(line.data) as item}<span
-                        class="byte-char"
-                        class:selected={isCharSelected(lineIdx, item)}
-                        onmousedown={(e) => {
-                          if (e.button === 0) {
-                            selStartLine = lineIdx;
-                            selStartByte = item.startIdx;
-                            selEndLine = lineIdx;
-                            selEndByte = item.endIdx;
-                          }
-                        }}
-                        onmouseenter={(e) => {
-                          if (e.buttons === 1 && selStartLine !== null) {
-                            selEndLine = lineIdx;
-                            selEndByte = item.endIdx;
-                          }
-                        }}
-                        oncontextmenu={(e) => {
-                          e.preventDefault();
-                          if (selStartLine === null) {
-                            selStartLine = lineIdx;
-                            selStartByte = item.startIdx;
-                            selEndLine = lineIdx;
-                            selEndByte = item.endIdx;
-                          }
-                          contextMenuType = "text";
-                          contextMenuX = e.clientX;
-                          contextMenuY = e.clientY;
-                          contextMenuVisible = true;
-                        }}>{item.char}</span
-                      >{/each}</span
+        {#if showHexArea}
+          <!-- HEX 模式：显示字节级交互 -->
+          <!-- svelte-ignore a11y_no_static_element_interactions -->
+          <div
+            id="receive-container"
+            class="receive-container"
+            onkeydown={handleKeydown}
+            onmousedown={(e) => {
+              // 只有点击空白区域（不是 byte 元素）时才清除选择
+              const target = e.target as HTMLElement;
+              if (
+                !target.classList.contains("byte-char") &&
+                !target.classList.contains("byte-hex")
+              ) {
+                clearSelection();
+              }
+            }}
+            tabindex="0"
+            role="textbox"
+            aria-label="接收数据区域"
+            aria-readonly="true"
+          >
+            {#each dataLines as line, lineIdx}
+              <div class="data-row {line.direction}">
+                <!-- svelte-ignore a11y_no_static_element_interactions -->
+                <div class="ascii-col">
+                  {#if showTimestamp && line.timestamp}
+                    <span class="timestamp">{line.timestamp}</span>
+                  {/if}
+                  <span class="direction"
+                    >{line.direction === "rx"
+                      ? "←"
+                      : line.direction === "tx"
+                        ? "→"
+                        : "●"}</span
                   >
-                {:else}
-                  <span class="system-text">{line.text}</span>
-                {/if}
-              </div>
-              {#if showHexArea}
+                  {#if line.data}
+                    <!-- svelte-ignore a11y_no_static_element_interactions -->
+                    <span class="data-content"
+                      >{#each parseDataToChars(line.data) as item}<span
+                          class="byte-char"
+                          class:selected={isCharSelected(lineIdx, item)}
+                          onmousedown={(e) => {
+                            if (e.button === 0) {
+                              selStartLine = lineIdx;
+                              selStartByte = item.startIdx;
+                              selEndLine = lineIdx;
+                              selEndByte = item.endIdx;
+                            }
+                          }}
+                          onmouseenter={(e) => {
+                            if (e.buttons === 1 && selStartLine !== null) {
+                              selEndLine = lineIdx;
+                              selEndByte = item.endIdx;
+                            }
+                          }}
+                          oncontextmenu={(e) => {
+                            e.preventDefault();
+                            if (selStartLine === null) {
+                              selStartLine = lineIdx;
+                              selStartByte = item.startIdx;
+                              selEndLine = lineIdx;
+                              selEndByte = item.endIdx;
+                            }
+                            contextMenuType = "text";
+                            contextMenuX = e.clientX;
+                            contextMenuY = e.clientY;
+                            contextMenuVisible = true;
+                          }}>{item.char}</span
+                        >{/each}</span
+                    >
+                  {:else}
+                    <span class="system-text">{line.text}</span>
+                  {/if}
+                </div>
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
                 <div class="hex-col">
                   {#if line.data}
@@ -1090,13 +1115,38 @@
                     >
                   {/if}
                 </div>
-              {/if}
-            </div>
-          {/each}
-          {#if dataLines.length === 0}
-            <div class="placeholder">接收的数据将显示在这里...</div>
-          {/if}
-        </div>
+              </div>
+            {/each}
+            {#if dataLines.length === 0}
+              <div class="placeholder">接收的数据将显示在这里...</div>
+            {/if}
+          </div>
+        {:else}
+          <!-- 纯文本模式：使用 textarea 显示 -->
+          <textarea
+            id="receive-container"
+            class="receive-textarea"
+            readonly
+            placeholder="接收的数据将显示在这里..."
+            value={dataLines
+              .map((line) => {
+                const prefix =
+                  showTimestamp && line.timestamp ? `[${line.timestamp}] ` : "";
+                const dir =
+                  line.direction === "rx"
+                    ? "← "
+                    : line.direction === "tx"
+                      ? "→ "
+                      : "● ";
+                if (line.data) {
+                  return prefix + dir + formatText(line.data);
+                } else {
+                  return prefix + dir + line.text;
+                }
+              })
+              .join("\n")}
+          ></textarea>
+        {/if}
       </div>
     </div>
 
