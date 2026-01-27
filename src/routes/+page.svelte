@@ -1135,11 +1135,15 @@
           {#if connectionType === "serial"}
             <div class="config-section compact">
               <div class="form-row">
-                <label for="serial-port">串口</label>
+                <label for="serial-port" title="串口">串口</label>
                 <div class="input-with-button">
-                  <select id="serial-port" bind:value={selectedPort}>
+                  <select
+                    id="serial-port"
+                    bind:value={selectedPort}
+                    title={selectedPort}
+                  >
                     {#each serialPorts as p}
-                      <option value={p}>{p}</option>
+                      <option value={p} title={p}>{p}</option>
                     {/each}
                   </select>
                   <button class="icon-btn" onclick={refreshPorts} title="刷新"
@@ -1148,8 +1152,8 @@
                 </div>
               </div>
               <div class="form-row">
-                <label for="baud-rate">波特率</label>
-                <select id="baud-rate" bind:value={baudRate}>
+                <label for="baud-rate" title="波特率">波特率</label>
+                <select id="baud-rate" bind:value={baudRate} title={baudRate}>
                   <option value="9600">9600</option>
                   <option value="19200">19200</option>
                   <option value="38400">38400</option>
@@ -1159,22 +1163,22 @@
               </div>
               <div class="form-row-inline">
                 <div class="form-col">
-                  <label for="data-bits">数据位</label>
-                  <select id="data-bits" bind:value={dataBits}>
+                  <label for="data-bits" title="数据位">数据位</label>
+                  <select id="data-bits" bind:value={dataBits} title={dataBits}>
                     <option value="7">7</option>
                     <option value="8">8</option>
                   </select>
                 </div>
                 <div class="form-col">
-                  <label for="stop-bits">停止位</label>
-                  <select id="stop-bits" bind:value={stopBits}>
+                  <label for="stop-bits" title="停止位">停止位</label>
+                  <select id="stop-bits" bind:value={stopBits} title={stopBits}>
                     <option value="1">1</option>
                     <option value="2">2</option>
                   </select>
                 </div>
                 <div class="form-col">
-                  <label for="parity">校验</label>
-                  <select id="parity" bind:value={parity}>
+                  <label for="parity" title="校验">校验</label>
+                  <select id="parity" bind:value={parity} title={parity}>
                     <option value="None">N</option>
                     <option value="Odd">O</option>
                     <option value="Even">E</option>
@@ -1185,49 +1189,59 @@
           {:else if connectionType === "tcp"}
             <div class="config-section compact">
               <div class="form-row">
-                <label for="tcp-remote-ip">远程IP</label>
+                <label for="tcp-remote-ip" title="远程IP">远程IP</label>
                 <input
                   id="tcp-remote-ip"
                   type="text"
                   bind:value={ipAddress}
                   placeholder="127.0.0.1"
+                  title={ipAddress}
                 />
               </div>
               <div class="form-row">
-                <label for="tcp-remote-port">远程端口</label>
+                <label for="tcp-remote-port" title="远程端口">远程端口</label>
                 <input
                   id="tcp-remote-port"
                   type="text"
                   bind:value={port}
                   placeholder="8080"
+                  title={port}
                 />
               </div>
               <div class="form-row">
-                <label for="tcp-local-port">本地端口</label>
+                <label for="tcp-local-port" title="本地端口">本地端口</label>
                 <input
                   id="tcp-local-port"
                   type="text"
                   bind:value={localPort}
                   placeholder="自动"
+                  title={localPort || "自动"}
                 />
               </div>
             </div>
           {:else if connectionType === "tcpserver"}
             <div class="config-section compact">
               <div class="form-row">
-                <label for="tcpserver-listen-port">监听端口</label>
+                <label for="tcpserver-listen-port" title="监听端口"
+                  >监听端口</label
+                >
                 <input
                   id="tcpserver-listen-port"
                   type="text"
                   bind:value={tcpServerPort}
                   placeholder="8080"
+                  title={tcpServerPort}
                 />
               </div>
               <div class="form-row">
-                <label for="tcpserver-bind-ip">绑定IP</label>
-                <select id="tcpserver-bind-ip" bind:value={tcpServerBindIp}>
+                <label for="tcpserver-bind-ip" title="绑定IP">绑定IP</label>
+                <select
+                  id="tcpserver-bind-ip"
+                  bind:value={tcpServerBindIp}
+                  title={tcpServerBindIp}
+                >
                   {#each localIpAddresses as ip}
-                    <option value={ip}>{ip}</option>
+                    <option value={ip} title={ip}>{ip}</option>
                   {/each}
                 </select>
               </div>
@@ -1235,30 +1249,33 @@
           {:else if connectionType === "udp"}
             <div class="config-section compact">
               <div class="form-row">
-                <label for="udp-remote-ip">远程IP</label>
+                <label for="udp-remote-ip" title="远程IP">远程IP</label>
                 <input
                   id="udp-remote-ip"
                   type="text"
                   bind:value={ipAddress}
                   placeholder="127.0.0.1"
+                  title={ipAddress}
                 />
               </div>
               <div class="form-row">
-                <label for="udp-remote-port">远程端口</label>
+                <label for="udp-remote-port" title="远程端口">远程端口</label>
                 <input
                   id="udp-remote-port"
                   type="text"
                   bind:value={port}
                   placeholder="8080"
+                  title={port}
                 />
               </div>
               <div class="form-row">
-                <label for="udp-local-port">本地端口</label>
+                <label for="udp-local-port" title="本地端口">本地端口</label>
                 <input
                   id="udp-local-port"
                   type="text"
                   bind:value={localPort}
                   placeholder="自动"
+                  title={localPort || "自动"}
                 />
               </div>
             </div>

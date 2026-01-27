@@ -106,6 +106,7 @@
       flex-direction: column;
       gap: 0.35rem;
       overflow-y: auto;
+      overflow-x: hidden;
       min-height: 0;
   }
 
@@ -172,6 +173,7 @@
       display: flex;
       align-items: center;
       gap: 0.3rem;
+      overflow: hidden;
   }
 
   .form-row label {
@@ -179,16 +181,23 @@
       color: #5a6c7d;
       min-width: 50px;
       flex-shrink: 0;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
   }
 
   .form-row input,
   .form-row select {
       flex: 1;
+      min-width: 0;
       padding: 0.25rem 0.5rem;
       border: 1px solid #d1d9e0;
       border-radius: 4px;
       font-size: 0.85rem;
       background: white;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
   }
 
   .form-row input:focus,
@@ -210,14 +219,19 @@
 
   .form-col {
       flex: 1;
+      min-width: 0;
       display: flex;
       flex-direction: column;
       gap: 0.1rem;
+      overflow: hidden;
   }
 
   .form-col label {
       font-size: 0.75rem;
       color: #5a6c7d;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
   }
 
   .form-col select {
@@ -225,6 +239,10 @@
       border: 1px solid #d1d9e0;
       border-radius: 4px;
       font-size: 0.8rem;
+      min-width: 0;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
   }
 
   .form-col select:disabled {
@@ -236,10 +254,16 @@
       display: flex;
       gap: 0.3rem;
       flex: 1;
+      min-width: 0;
+      overflow: hidden;
   }
 
   .input-with-button select {
       flex: 1;
+      min-width: 0;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
   }
 
   /* 连接按钮 */
