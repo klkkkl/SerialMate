@@ -82,8 +82,8 @@
   .bottom-panel {
       display: flex;
       gap: 0.5rem;
-      height: 210px;
-      min-height: 210px;
+      height: 260px;
+      min-height: 260px;
       flex-shrink: 0;
   }
 
@@ -266,6 +266,34 @@
       text-overflow: ellipsis;
   }
 
+  /* 历史配置选择 */
+  .history-select {
+      margin-top: 0.25rem;
+      padding-top: 0.25rem;
+      border-top: 1px solid #e8ecef;
+  }
+
+  .history-select select {
+      width: 100%;
+      padding: 0.25rem 0.4rem;
+      font-size: 0.75rem;
+      border: 1px solid #d1d9e0;
+      border-radius: 4px;
+      background: #f5f7fa;
+      color: #5a6c7d;
+      cursor: pointer;
+  }
+
+  .history-select select:hover {
+      border-color: #667eea;
+      background: #e0e7ff;
+  }
+
+  .history-select select:focus {
+      outline: none;
+      border-color: #667eea;
+  }
+
   /* 连接按钮 */
   .connect-btn {
       width: 100%;
@@ -315,6 +343,69 @@
       cursor: not-allowed;
   }
 
+  /* 串口控制信号 */
+  .signal-control {
+      margin-top: 0.25rem;
+      padding-top: 0.25rem;
+      border-top: 1px solid #e8ecef;
+  }
+
+  .signal-row {
+      display: flex;
+      gap: 0.25rem;
+      flex-wrap: wrap;
+      justify-content: space-between;
+  }
+
+  .signal-btn {
+      flex: 1;
+      min-width: 0;
+      padding: 0.2rem 0.3rem;
+      font-size: 0.65rem;
+      font-weight: 600;
+      border: 1px solid #d1d9e0;
+      border-radius: 3px;
+      background: #f5f7fa;
+      color: #5a6c7d;
+      cursor: pointer;
+      transition: all 0.15s;
+  }
+
+  .signal-btn:hover:not(:disabled) {
+      border-color: #667eea;
+      background: #e0e7ff;
+  }
+
+  .signal-btn.active {
+      background: #27ae60;
+      border-color: #27ae60;
+      color: white;
+  }
+
+  .signal-btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+  }
+
+  .signal-indicator {
+      flex: 1;
+      min-width: 0;
+      padding: 0.2rem 0.3rem;
+      font-size: 0.65rem;
+      font-weight: 600;
+      border: 1px solid #d1d9e0;
+      border-radius: 3px;
+      background: #f5f7fa;
+      color: #95a5a6;
+      text-align: center;
+  }
+
+  .signal-indicator.on {
+      background: #3498db;
+      border-color: #3498db;
+      color: white;
+  }
+
   .receive-area {
       flex: 1;
       background: white;
@@ -328,21 +419,31 @@
 
   .receive-header {
       display: flex;
+      justify-content: space-between;
+      align-items: center;
       background: #f5f7fa;
       border-bottom: 1px solid #e8ecef;
       padding: 0.4rem 0.5rem;
       font-size: 0.85rem;
       font-weight: 600;
       color: #5a6c7d;
+      gap: 0.5rem;
+  }
+
+  .receive-header-left {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
   }
 
   .receive-header .receive-label {
-      flex: 1;
       text-align: center;
+      padding: 0 0.5rem;
   }
 
   .receive-header .receive-label:first-child {
       border-right: 1px solid #e8ecef;
+      padding-right: 0.5rem;
   }
 
   .receive-header .hex-label {
@@ -350,6 +451,91 @@
       align-items: center;
       justify-content: center;
       gap: 0.5rem;
+  }
+
+  /* 搜索和过滤组 */
+  .search-filter-group {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      flex: 1;
+      justify-content: flex-end;
+  }
+
+  .filter-direction {
+      padding: 0.2rem 0.4rem;
+      font-size: 0.75rem;
+      border: 1px solid #e8ecef;
+      border-radius: 4px;
+      background: white;
+      color: #5a6c7d;
+      cursor: pointer;
+  }
+
+  .filter-direction:focus {
+      outline: none;
+      border-color: #667eea;
+  }
+
+  .search-box {
+      display: flex;
+      align-items: center;
+      background: white;
+      border: 1px solid #e8ecef;
+      border-radius: 4px;
+      overflow: hidden;
+  }
+
+  .search-box:focus-within {
+      border-color: #667eea;
+  }
+
+  .search-input {
+      border: none;
+      outline: none;
+      padding: 0.25rem 0.5rem;
+      font-size: 0.75rem;
+      width: 120px;
+      background: transparent;
+  }
+
+  .search-input::placeholder {
+      color: #a0aec0;
+  }
+
+  .search-mode {
+      border: none;
+      border-left: 1px solid #e8ecef;
+      padding: 0.2rem 0.3rem;
+      font-size: 0.7rem;
+      background: #f5f7fa;
+      color: #5a6c7d;
+      cursor: pointer;
+  }
+
+  .search-mode:focus {
+      outline: none;
+  }
+
+  .clear-search-btn {
+      border: none;
+      background: none;
+      color: #9ca3af;
+      cursor: pointer;
+      padding: 0.2rem 0.4rem;
+      font-size: 0.7rem;
+      line-height: 1;
+  }
+
+  .clear-search-btn:hover {
+      color: #ef4444;
+  }
+
+  .filter-count {
+      font-size: 0.7rem;
+      color: #667eea;
+      font-weight: 500;
+      white-space: nowrap;
   }
 
   .toggle-hex-btn {
@@ -409,6 +595,59 @@
       color: #a0aec0;
   }
 
+  /* 纯文本模式 div 容器 */
+  .receive-container.text-mode {
+      padding: 0.3rem 0.5rem;
+      user-select: text;
+  }
+
+  .text-line {
+      display: flex;
+      align-items: flex-start;
+      padding: 0.15rem 0;
+      gap: 0.3rem;
+  }
+
+  .text-line:hover {
+      background: #f9fafb;
+  }
+
+  .text-line .timestamp {
+      color: #9ca3af;
+      flex-shrink: 0;
+  }
+
+  .text-line .direction {
+      font-weight: 500;
+      flex-shrink: 0;
+  }
+
+  .text-line.rx .direction {
+      color: #10b981;
+  }
+
+  .text-line.tx .direction {
+      color: #3b82f6;
+  }
+
+  .text-line.system .direction {
+      color: #f59e0b;
+  }
+
+  .text-line.system {
+      background: #fffbeb;
+  }
+
+  .text-line .text-content {
+      color: #374151;
+      word-break: break-all;
+      white-space: pre-wrap;
+  }
+
+  .text-line .system-text {
+      color: #92400e;
+  }
+
   .data-row {
       display: flex;
       border-bottom: 1px solid #f0f2f5;
@@ -466,6 +705,27 @@
   .byte-hex.selected {
       background: #667eea;
       color: white;
+  }
+
+  /* 搜索高亮 */
+  .byte-char.search-highlight,
+  .byte-hex.search-highlight {
+      background: #fef08a;
+      color: #854d0e;
+  }
+
+  .byte-char.search-highlight.selected,
+  .byte-hex.search-highlight.selected {
+      background: #667eea;
+      color: white;
+  }
+
+  .system-text :global(mark.search-highlight),
+  mark.search-highlight {
+      background: #fef08a;
+      color: #854d0e;
+      padding: 0 0.1rem;
+      border-radius: 2px;
   }
 
   .timestamp {
@@ -630,6 +890,7 @@
   /* 发送输入组 */
   .send-input-group {
       display: flex;
+      flex-direction: column;
       gap: 0.5rem;
       height: 100%;
   }
@@ -638,14 +899,49 @@
       flex: 1;
   }
 
+  /* 历史指令下拉框 */
+  .command-history {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.25rem 0;
+  }
+
+  .command-history label {
+      font-size: 0.75rem;
+      color: #555;
+      white-space: nowrap;
+  }
+
+  .command-history select {
+      flex: 1;
+      padding: 0.3rem 0.5rem;
+      font-size: 0.75rem;
+      border: 1px solid #e8ecef;
+      border-radius: 4px;
+      background: #fafbfc;
+      color: #2c3e50;
+      cursor: pointer;
+      font-family: "Consolas", "Monaco", monospace;
+  }
+
+  .command-history select:focus {
+      outline: none;
+      border-color: #667eea;
+  }
+
+  .command-history select:hover {
+      background: #f0f2f5;
+  }
+
   .send-buttons {
       display: flex;
-      flex-direction: column;
-      gap: 0.4rem;
+      gap: 0.5rem;
+      align-items: center;
   }
 
   .send-btn {
-      padding: 0 1rem;
+      padding: 0.5rem 1.5rem;
       background: #27ae60;
       color: white;
       border: none;
@@ -654,7 +950,7 @@
       font-weight: 600;
       cursor: pointer;
       transition: all 0.15s;
-      flex: 1;
+      white-space: nowrap;
   }
 
   .send-btn:hover:not(:disabled) {

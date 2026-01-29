@@ -40,6 +40,14 @@
   let stopBits = $state("1");
   let parity = $state("None");
 
+  // 串口控制信号（RTS/DTR 可设置，CTS/DSR/DCD 只读）
+  let rtsEnabled = $state(false);
+  let dtrEnabled = $state(false);
+  let ctsState = $state(false);
+  let dsrState = $state(false);
+  let dcdState = $state(false);
+  let signalPollingTimer: ReturnType<typeof setInterval> | null = null;
+
   // 网络配置
   let ipAddress = $state("127.0.0.1");
   let port = $state("8080");
@@ -47,6 +55,25 @@
   let tcpServerPort = $state("8080"); // TCP Server 监听端口
   let tcpServerBindIp = $state("0.0.0.0"); // TCP Server 绑定IP
   let localIpAddresses = $state<string[]>(["0.0.0.0", "127.0.0.1"]); // 本机可用IP列表
+
+  // 网络连接历史配置（最多10组不重复）
+  interface TcpHistoryConfig {
+    remoteHost: string;
+    remotePort: string;
+    localPort: string;
+  }
+  interface TcpServerHistoryConfig {
+    bindIp: string;
+    listenPort: string;
+  }
+  interface UdpHistoryConfig {
+    remoteHost: string;
+    remotePort: string;
+    localPort: string;
+  }
+  let tcpHistory = $state<TcpHistoryConfig[]>([]);
+  let tcpServerHistory = $state<TcpServerHistoryConfig[]>([]);
+  let udpHistory = $state<UdpHistoryConfig[]>([]);
 
   // 数据显示
   interface DataLine {
@@ -59,6 +86,9 @@
   let dataLines = $state<DataLine[]>([]);
   let sendData = $state("");
 
+  // 历史指令（最多15条不重复）
+  let commandHistory = $state<string[]>([]);
+
   // 统计
   let rxBytes = $state(0);
   let txBytes = $state(0);
@@ -69,6 +99,11 @@
   let hexSend = $state(false);
   let showHexArea = $state(true);
   let lineEnding = $state<"none" | "crlf" | "cr" | "lf">("none");
+
+  // 搜索和过滤
+  let searchText = $state("");
+  let searchMode = $state<"text" | "hex">("text");
+  let filterDirection = $state<"all" | "rx" | "tx">("all");
 
   // 保存的滚动位置（用于 HEX 切换时保持位置）
   let savedScrollRatio = 0;
@@ -141,6 +176,105 @@
       console.error("获取本机IP失败:", error);
       localIpAddresses = ["0.0.0.0", "127.0.0.1"];
     }
+  }
+
+  // 启动信号状态轮询
+  function startSignalPolling() {
+    if (signalPollingTimer) return;
+    signalPollingTimer = setInterval(async () => {
+      if (isConnected && transceiver instanceof SerialTransceiver) {
+        try {
+          ctsState = await transceiver.readCTS();
+          dsrState = await transceiver.readDSR();
+          dcdState = await transceiver.readDCD();
+        } catch (e) {
+          // 忽略轮询错误
+        }
+      }
+    }, 500);
+  }
+
+  // 停止信号状态轮询
+  function stopSignalPolling() {
+    if (signalPollingTimer) {
+      clearInterval(signalPollingTimer);
+      signalPollingTimer = null;
+    }
+    // 重置状态
+    ctsState = false;
+    dsrState = false;
+    dcdState = false;
+  }
+
+  // 设置 RTS 信号
+  async function toggleRTS() {
+    if (!isConnected || !(transceiver instanceof SerialTransceiver)) return;
+    try {
+      rtsEnabled = !rtsEnabled;
+      await transceiver.setRTS(rtsEnabled);
+    } catch (e) {
+      console.error("设置 RTS 失败:", e);
+      rtsEnabled = !rtsEnabled; // 回滚
+    }
+  }
+
+  // 设置 DTR 信号
+  async function toggleDTR() {
+    if (!isConnected || !(transceiver instanceof SerialTransceiver)) return;
+    try {
+      dtrEnabled = !dtrEnabled;
+      await transceiver.setDTR(dtrEnabled);
+    } catch (e) {
+      console.error("设置 DTR 失败:", e);
+      dtrEnabled = !dtrEnabled; // 回滚
+    }
+  }
+
+  // 添加 TCP 历史配置
+  function addTcpHistory(config: TcpHistoryConfig) {
+    const key = `${config.remoteHost}:${config.remotePort}:${config.localPort}`;
+    tcpHistory = tcpHistory.filter(
+      (c) => `${c.remoteHost}:${c.remotePort}:${c.localPort}` !== key,
+    );
+    tcpHistory = [config, ...tcpHistory].slice(0, 10);
+  }
+
+  // 添加 TCP Server 历史配置
+  function addTcpServerHistory(config: TcpServerHistoryConfig) {
+    const key = `${config.bindIp}:${config.listenPort}`;
+    tcpServerHistory = tcpServerHistory.filter(
+      (c) => `${c.bindIp}:${c.listenPort}` !== key,
+    );
+    tcpServerHistory = [config, ...tcpServerHistory].slice(0, 10);
+  }
+
+  // 添加 UDP 历史配置
+  function addUdpHistory(config: UdpHistoryConfig) {
+    const key = `${config.remoteHost}:${config.remotePort}:${config.localPort}`;
+    udpHistory = udpHistory.filter(
+      (c) => `${c.remoteHost}:${c.remotePort}:${c.localPort}` !== key,
+    );
+    udpHistory = [config, ...udpHistory].slice(0, 10);
+  }
+
+  // 应用 TCP 历史配置
+  function applyTcpHistory(config: TcpHistoryConfig) {
+    ipAddress = config.remoteHost;
+    port = config.remotePort;
+    localPort = config.localPort;
+  }
+
+  // 应用 TCP Server 历史配置
+  function applyTcpServerHistory(config: TcpServerHistoryConfig) {
+    tcpServerBindIp = config.bindIp;
+    tcpServerPort = config.listenPort;
+  }
+
+  // 应用 UDP 历史配置
+  function applyUdpHistory(config: UdpHistoryConfig) {
+    ipAddress = config.remoteHost;
+    port = config.remotePort;
+    localPort = config.localPort;
   }
 
   // 连接/断开
@@ -222,6 +356,33 @@
         await transceiver.connect();
         isConnected = true;
         appendSystemMessage("连接成功");
+
+        // 保存网络连接历史配置
+        if (connectionType === "tcp") {
+          addTcpHistory({ remoteHost: ipAddress, remotePort: port, localPort });
+        } else if (connectionType === "tcpserver") {
+          addTcpServerHistory({
+            bindIp: tcpServerBindIp,
+            listenPort: tcpServerPort,
+          });
+        } else if (connectionType === "udp") {
+          addUdpHistory({ remoteHost: ipAddress, remotePort: port, localPort });
+        }
+
+        // 串口连接成功后设置 RTS/DTR 信号并启动状态轮询
+        if (
+          connectionType === "serial" &&
+          transceiver instanceof SerialTransceiver
+        ) {
+          try {
+            await transceiver.setRTS(rtsEnabled);
+            await transceiver.setDTR(dtrEnabled);
+          } catch (e) {
+            console.error("设置 RTS/DTR 失败:", e);
+          }
+          // 启动信号状态轮询
+          startSignalPolling();
+        }
       }
     } catch (error) {
       console.error("连接失败:", error);
@@ -239,6 +400,9 @@
     // 停止定时发送
     stopTimer();
     timerEnabled = false;
+
+    // 停止信号状态轮询
+    stopSignalPolling();
 
     try {
       if (transceiver) {
@@ -286,12 +450,210 @@
       const bytesSent = await transceiver.send(dataToSend);
       txBytes += bytesSent;
       appendDataLine("tx", dataToSend);
+
+      // 更新历史指令（去重并限制为15条）
+      updateCommandHistory(sendData.trim());
     } catch (error) {
       console.error("发送失败:", error);
       appendSystemMessage(`发送失败: ${error}`);
       // 发送异常后自动断开连接
       await disconnect();
     }
+  }
+
+  // 更新历史指令
+  function updateCommandHistory(command: string) {
+    if (!command) return;
+
+    // 移除重复项（如果存在）
+    commandHistory = commandHistory.filter((cmd) => cmd !== command);
+
+    // 添加到开头
+    commandHistory = [command, ...commandHistory];
+
+    // 限制为15条
+    if (commandHistory.length > 15) {
+      commandHistory = commandHistory.slice(0, 15);
+    }
+  }
+
+  // 从历史记录选择指令
+  function selectFromHistory(command: string) {
+    sendData = command;
+  }
+
+  // 获取过滤后的数据行
+  function getFilteredDataLines(): { line: DataLine; originalIndex: number }[] {
+    let result = dataLines.map((line, index) => ({
+      line,
+      originalIndex: index,
+    }));
+
+    // 按方向过滤
+    if (filterDirection !== "all") {
+      result = result.filter((item) => item.line.direction === filterDirection);
+    }
+
+    // 按搜索文本过滤
+    if (searchText.trim()) {
+      const query = searchText.trim().toLowerCase();
+      result = result.filter((item) => {
+        const line = item.line;
+
+        // 系统消息只搜索文本
+        if (line.type === "system") {
+          return line.text.toLowerCase().includes(query);
+        }
+
+        if (!line.data) return false;
+
+        if (searchMode === "hex") {
+          // HEX搜索模式：搜索十六进制字符串
+          const hexStr = Array.from(line.data)
+            .map((b) => b.toString(16).padStart(2, "0").toUpperCase())
+            .join(" ");
+          return hexStr.toLowerCase().includes(query.replace(/\s+/g, " "));
+        } else {
+          // 文本搜索模式：搜索解码后的文本
+          const text = formatText(line.data);
+          return text.toLowerCase().includes(query);
+        }
+      });
+    }
+
+    return result;
+  }
+
+  // 检查是否有搜索/过滤条件
+  function hasFilter(): boolean {
+    return searchText.trim() !== "" || filterDirection !== "all";
+  }
+
+  // 检查是否有搜索文本
+  function hasSearchText(): boolean {
+    return searchText.trim() !== "";
+  }
+
+  // 检查字节是否在搜索匹配范围内（用于HEX高亮）
+  function isByteInSearchMatch(data: Uint8Array, byteIdx: number): boolean {
+    if (!hasSearchText() || searchMode !== "hex") return false;
+
+    const query = searchText.trim().toLowerCase().replace(/\s+/g, "");
+    if (!query) return false;
+
+    const hexStr = Array.from(data)
+      .map((b) => b.toString(16).padStart(2, "0"))
+      .join("");
+
+    const lowerHex = hexStr.toLowerCase();
+    let pos = 0;
+    while ((pos = lowerHex.indexOf(query, pos)) !== -1) {
+      const startByte = Math.floor(pos / 2);
+      const endByte = Math.ceil((pos + query.length) / 2) - 1;
+      if (byteIdx >= startByte && byteIdx <= endByte) {
+        return true;
+      }
+      pos++;
+    }
+    return false;
+  }
+
+  // 检查字符项是否在搜索匹配范围内（用于文本高亮）
+  function isCharInSearchMatch(data: Uint8Array, item: CharItem): boolean {
+    if (!hasSearchText() || searchMode !== "text") return false;
+
+    const query = searchText.trim().toLowerCase();
+    if (!query) return false;
+
+    const text = formatText(data);
+    const lowerText = text.toLowerCase();
+    const chars = parseDataToChars(data);
+
+    // 找到所有匹配位置
+    let pos = 0;
+    while ((pos = lowerText.indexOf(query, pos)) !== -1) {
+      const endPos = pos + query.length - 1;
+      // 检查item是否在这个匹配范围内
+      // 需要找到对应的字符索引
+      let charStartIdx = -1;
+      let charEndIdx = -1;
+      let currentCharPos = 0;
+      for (let i = 0; i < chars.length; i++) {
+        const charLen = chars[i].char.length;
+        if (
+          currentCharPos <= pos &&
+          pos < currentCharPos + charLen &&
+          charStartIdx === -1
+        ) {
+          charStartIdx = i;
+        }
+        if (currentCharPos <= endPos && endPos < currentCharPos + charLen) {
+          charEndIdx = i;
+          break;
+        }
+        currentCharPos += charLen;
+      }
+
+      // 找到item在chars中的索引
+      const itemIdx = chars.findIndex(
+        (c) => c.startIdx === item.startIdx && c.endIdx === item.endIdx,
+      );
+      if (itemIdx >= charStartIdx && itemIdx <= charEndIdx) {
+        return true;
+      }
+      pos++;
+    }
+    return false;
+  }
+
+  // 高亮系统消息文本
+  function highlightSystemText(text: string): string {
+    if (!hasSearchText()) return escapeHtml(text);
+
+    const query = searchText.trim();
+    if (!query) return escapeHtml(text);
+
+    const regex = new RegExp(`(${escapeRegex(query)})`, "gi");
+    return escapeHtml(text).replace(
+      regex,
+      '<mark class="search-highlight">$1</mark>',
+    );
+  }
+
+  // 高亮数据文本（用于纯文本模式）
+  function highlightDataText(data: Uint8Array): string {
+    const text = formatText(data);
+    if (!hasSearchText() || searchMode !== "text") return escapeHtml(text);
+
+    const query = searchText.trim();
+    if (!query) return escapeHtml(text);
+
+    const regex = new RegExp(`(${escapeRegex(query)})`, "gi");
+    return escapeHtml(text).replace(
+      regex,
+      '<mark class="search-highlight">$1</mark>',
+    );
+  }
+
+  // 转义HTML特殊字符
+  function escapeHtml(text: string): string {
+    return text
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#039;");
+  }
+
+  // 转义正则表达式特殊字符
+  function escapeRegex(str: string): string {
+    return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  }
+
+  // 清除搜索
+  function clearSearch() {
+    searchText = "";
+    filterDirection = "all";
   }
 
   // 清空接收区
@@ -817,6 +1179,8 @@
     dataBits: string;
     stopBits: string;
     parity: string;
+    rtsEnabled: boolean;
+    dtrEnabled: boolean;
     ipAddress: string;
     port: string;
     localPort: string;
@@ -829,6 +1193,10 @@
     lineEnding: "none" | "crlf" | "cr" | "lf";
     textEncoding: "gb2312" | "utf-8" | "gbk" | "big5" | "ascii";
     timerInterval: number;
+    commandHistory: string[];
+    tcpHistory: TcpHistoryConfig[];
+    tcpServerHistory: TcpServerHistoryConfig[];
+    udpHistory: UdpHistoryConfig[];
   }
 
   function loadSettings() {
@@ -842,6 +1210,8 @@
         dataBits = settings.dataBits ?? "8";
         stopBits = settings.stopBits ?? "1";
         parity = settings.parity ?? "None";
+        rtsEnabled = settings.rtsEnabled ?? false;
+        dtrEnabled = settings.dtrEnabled ?? false;
         ipAddress = settings.ipAddress ?? "127.0.0.1";
         port = settings.port ?? "8080";
         localPort = settings.localPort ?? "";
@@ -854,6 +1224,10 @@
         lineEnding = settings.lineEnding ?? "none";
         textEncoding = settings.textEncoding ?? "gb2312";
         timerInterval = settings.timerInterval ?? 1000;
+        commandHistory = settings.commandHistory ?? [];
+        tcpHistory = settings.tcpHistory ?? [];
+        tcpServerHistory = settings.tcpServerHistory ?? [];
+        udpHistory = settings.udpHistory ?? [];
       }
     } catch (e) {
       console.error("加载设置失败:", e);
@@ -869,6 +1243,8 @@
         dataBits,
         stopBits,
         parity,
+        rtsEnabled,
+        dtrEnabled,
         ipAddress,
         port,
         localPort,
@@ -881,6 +1257,10 @@
         lineEnding,
         textEncoding,
         timerInterval,
+        commandHistory,
+        tcpHistory,
+        tcpServerHistory,
+        udpHistory,
       };
       localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
     } catch (e) {
@@ -943,6 +1323,8 @@
       dataBits,
       stopBits,
       parity,
+      rtsEnabled,
+      dtrEnabled,
       ipAddress,
       port,
       localPort,
@@ -955,6 +1337,10 @@
       lineEnding,
       textEncoding,
       timerInterval,
+      commandHistory,
+      tcpHistory,
+      tcpServerHistory,
+      udpHistory,
     ];
     saveSettings();
   });
@@ -979,23 +1365,68 @@
       <!-- 接收区 -->
       <div class="receive-area">
         <div class="receive-header">
-          <span class="receive-label">{textEncoding.toUpperCase()}</span>
-          {#if showHexArea}
-            <span class="receive-label hex-label">
-              HEX
+          <div class="receive-header-left">
+            <span class="receive-label">{textEncoding.toUpperCase()}</span>
+            {#if showHexArea}
+              <span class="receive-label hex-label">
+                HEX
+                <button
+                  class="toggle-hex-btn"
+                  onclick={() => toggleHexArea(false)}
+                  title="隐藏HEX区">✕</button
+                >
+              </span>
+            {:else}
               <button
-                class="toggle-hex-btn"
-                onclick={() => toggleHexArea(false)}
-                title="隐藏HEX区">✕</button
+                class="show-hex-btn"
+                onclick={() => toggleHexArea(true)}
+                title="显示HEX区">显示HEX</button
               >
-            </span>
-          {:else}
-            <button
-              class="show-hex-btn"
-              onclick={() => toggleHexArea(true)}
-              title="显示HEX区">显示HEX</button
+            {/if}
+          </div>
+
+          <!-- 搜索和过滤 -->
+          <div class="search-filter-group">
+            <select
+              class="filter-direction"
+              bind:value={filterDirection}
+              title="过滤方向"
             >
-          {/if}
+              <option value="all">全部</option>
+              <option value="rx">← 接收</option>
+              <option value="tx">→ 发送</option>
+            </select>
+            <div class="search-box">
+              <input
+                type="text"
+                class="search-input"
+                bind:value={searchText}
+                placeholder={searchMode === "hex"
+                  ? "搜索HEX..."
+                  : "搜索文本..."}
+              />
+              <select
+                class="search-mode"
+                bind:value={searchMode}
+                title="搜索模式"
+              >
+                <option value="text">文本</option>
+                <option value="hex">HEX</option>
+              </select>
+              {#if hasFilter()}
+                <button
+                  class="clear-search-btn"
+                  onclick={clearSearch}
+                  title="清除搜索">✕</button
+                >
+              {/if}
+            </div>
+            {#if hasFilter()}
+              <span class="filter-count"
+                >{getFilteredDataLines().length}/{dataLines.length}</span
+              >
+            {/if}
+          </div>
         </div>
         {#if showHexArea}
           <!-- HEX 模式：显示字节级交互 -->
@@ -1019,7 +1450,7 @@
             aria-label="接收数据区域"
             aria-readonly="true"
           >
-            {#each dataLines as line, lineIdx}
+            {#each getFilteredDataLines() as { line, originalIndex }}
               <div class="data-row {line.direction}">
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
                 <div class="ascii-col">
@@ -1038,27 +1469,31 @@
                     <span class="data-content"
                       >{#each parseDataToChars(line.data) as item}<span
                           class="byte-char"
-                          class:selected={isCharSelected(lineIdx, item)}
+                          class:selected={isCharSelected(originalIndex, item)}
+                          class:search-highlight={isCharInSearchMatch(
+                            line.data,
+                            item,
+                          )}
                           onmousedown={(e) => {
                             if (e.button === 0) {
-                              selStartLine = lineIdx;
+                              selStartLine = originalIndex;
                               selStartByte = item.startIdx;
-                              selEndLine = lineIdx;
+                              selEndLine = originalIndex;
                               selEndByte = item.endIdx;
                             }
                           }}
                           onmouseenter={(e) => {
                             if (e.buttons === 1 && selStartLine !== null) {
-                              selEndLine = lineIdx;
+                              selEndLine = originalIndex;
                               selEndByte = item.endIdx;
                             }
                           }}
                           oncontextmenu={(e) => {
                             e.preventDefault();
                             if (selStartLine === null) {
-                              selStartLine = lineIdx;
+                              selStartLine = originalIndex;
                               selStartByte = item.startIdx;
-                              selEndLine = lineIdx;
+                              selEndLine = originalIndex;
                               selEndByte = item.endIdx;
                             }
                             contextMenuType = "text";
@@ -1069,7 +1504,9 @@
                         >{/each}</span
                     >
                   {:else}
-                    <span class="system-text">{line.text}</span>
+                    <span class="system-text"
+                      >{@html highlightSystemText(line.text)}</span
+                    >
                   {/if}
                 </div>
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -1079,27 +1516,34 @@
                     <span class="data-content"
                       >{#each Array.from(line.data) as byte, byteIdx}<span
                           class="byte-hex"
-                          class:selected={isByteSelected(lineIdx, byteIdx)}
+                          class:selected={isByteSelected(
+                            originalIndex,
+                            byteIdx,
+                          )}
+                          class:search-highlight={isByteInSearchMatch(
+                            line.data,
+                            byteIdx,
+                          )}
                           onmousedown={(e) => {
                             if (e.button === 0) {
-                              selStartLine = lineIdx;
+                              selStartLine = originalIndex;
                               selStartByte = byteIdx;
-                              selEndLine = lineIdx;
+                              selEndLine = originalIndex;
                               selEndByte = byteIdx;
                             }
                           }}
                           onmouseenter={(e) => {
                             if (e.buttons === 1 && selStartLine !== null) {
-                              selEndLine = lineIdx;
+                              selEndLine = originalIndex;
                               selEndByte = byteIdx;
                             }
                           }}
                           oncontextmenu={(e) => {
                             e.preventDefault();
                             if (selStartLine === null) {
-                              selStartLine = lineIdx;
+                              selStartLine = originalIndex;
                               selStartByte = byteIdx;
-                              selEndLine = lineIdx;
+                              selEndLine = originalIndex;
                               selEndByte = byteIdx;
                             }
                             contextMenuType = "hex";
@@ -1117,35 +1561,44 @@
                 </div>
               </div>
             {/each}
-            {#if dataLines.length === 0}
-              <div class="placeholder">接收的数据将显示在这里...</div>
+            {#if getFilteredDataLines().length === 0}
+              <div class="placeholder">
+                {hasFilter() ? "没有匹配的数据" : "接收的数据将显示在这里..."}
+              </div>
             {/if}
           </div>
         {:else}
-          <!-- 纯文本模式：使用 textarea 显示 -->
-          <textarea
-            id="receive-container"
-            class="receive-textarea"
-            readonly
-            placeholder="接收的数据将显示在这里..."
-            value={dataLines
-              .map((line) => {
-                const prefix =
-                  showTimestamp && line.timestamp ? `[${line.timestamp}] ` : "";
-                const dir =
-                  line.direction === "rx"
-                    ? "← "
+          <!-- 纯文本模式：使用 div 显示以支持高亮 -->
+          <div id="receive-container" class="receive-container text-mode">
+            {#each getFilteredDataLines() as { line }}
+              <div class="text-line {line.direction}">
+                {#if showTimestamp && line.timestamp}
+                  <span class="timestamp">[{line.timestamp}]</span>
+                {/if}
+                <span class="direction"
+                  >{line.direction === "rx"
+                    ? "←"
                     : line.direction === "tx"
-                      ? "→ "
-                      : "● ";
-                if (line.data) {
-                  return prefix + dir + formatText(line.data);
-                } else {
-                  return prefix + dir + line.text;
-                }
-              })
-              .join("\n")}
-          ></textarea>
+                      ? "→"
+                      : "●"}</span
+                >
+                {#if line.data}
+                  <span class="text-content"
+                    >{@html highlightDataText(line.data)}</span
+                  >
+                {:else}
+                  <span class="system-text"
+                    >{@html highlightSystemText(line.text)}</span
+                  >
+                {/if}
+              </div>
+            {/each}
+            {#if getFilteredDataLines().length === 0}
+              <div class="placeholder">
+                {hasFilter() ? "没有匹配的数据" : "接收的数据将显示在这里..."}
+              </div>
+            {/if}
+          </div>
         {/if}
       </div>
     </div>
@@ -1235,6 +1688,36 @@
                   </select>
                 </div>
               </div>
+
+              <!-- 串口控制信号 -->
+              <div class="signal-control">
+                <div class="signal-row">
+                  <button
+                    class="signal-btn {rtsEnabled ? 'active' : ''}"
+                    onclick={toggleRTS}
+                    disabled={!isConnected}
+                    title="Request To Send">RTS</button
+                  >
+                  <button
+                    class="signal-btn {dtrEnabled ? 'active' : ''}"
+                    onclick={toggleDTR}
+                    disabled={!isConnected}
+                    title="Data Terminal Ready">DTR</button
+                  >
+                  <span
+                    class="signal-indicator {ctsState ? 'on' : ''}"
+                    title="Clear To Send">CTS</span
+                  >
+                  <span
+                    class="signal-indicator {dsrState ? 'on' : ''}"
+                    title="Data Set Ready">DSR</span
+                  >
+                  <span
+                    class="signal-indicator {dcdState ? 'on' : ''}"
+                    title="Data Carrier Detect">DCD</span
+                  >
+                </div>
+              </div>
             </div>
           {:else if connectionType === "tcp"}
             <div class="config-section compact">
@@ -1268,6 +1751,30 @@
                   title={localPort || "自动"}
                 />
               </div>
+              {#if tcpHistory.length > 0}
+                <div class="history-select">
+                  <select
+                    onchange={(e) => {
+                      const idx = parseInt(
+                        (e.target as HTMLSelectElement).value,
+                      );
+                      if (!isNaN(idx) && tcpHistory[idx]) {
+                        applyTcpHistory(tcpHistory[idx]);
+                      }
+                      (e.target as HTMLSelectElement).value = "";
+                    }}
+                  >
+                    <option value="">历史记录...</option>
+                    {#each tcpHistory as config, idx}
+                      <option value={idx}
+                        >{config.remoteHost}:{config.remotePort}{config.localPort
+                          ? ` (本地:${config.localPort})`
+                          : ""}</option
+                      >
+                    {/each}
+                  </select>
+                </div>
+              {/if}
             </div>
           {:else if connectionType === "tcpserver"}
             <div class="config-section compact">
@@ -1295,6 +1802,28 @@
                   {/each}
                 </select>
               </div>
+              {#if tcpServerHistory.length > 0}
+                <div class="history-select">
+                  <select
+                    onchange={(e) => {
+                      const idx = parseInt(
+                        (e.target as HTMLSelectElement).value,
+                      );
+                      if (!isNaN(idx) && tcpServerHistory[idx]) {
+                        applyTcpServerHistory(tcpServerHistory[idx]);
+                      }
+                      (e.target as HTMLSelectElement).value = "";
+                    }}
+                  >
+                    <option value="">历史记录...</option>
+                    {#each tcpServerHistory as config, idx}
+                      <option value={idx}
+                        >{config.bindIp}:{config.listenPort}</option
+                      >
+                    {/each}
+                  </select>
+                </div>
+              {/if}
             </div>
           {:else if connectionType === "udp"}
             <div class="config-section compact">
@@ -1328,6 +1857,30 @@
                   title={localPort || "自动"}
                 />
               </div>
+              {#if udpHistory.length > 0}
+                <div class="history-select">
+                  <select
+                    onchange={(e) => {
+                      const idx = parseInt(
+                        (e.target as HTMLSelectElement).value,
+                      );
+                      if (!isNaN(idx) && udpHistory[idx]) {
+                        applyUdpHistory(udpHistory[idx]);
+                      }
+                      (e.target as HTMLSelectElement).value = "";
+                    }}
+                  >
+                    <option value="">历史记录...</option>
+                    {#each udpHistory as config, idx}
+                      <option value={idx}
+                        >{config.remoteHost}:{config.remotePort}{config.localPort
+                          ? ` (本地:${config.localPort})`
+                          : ""}</option
+                      >
+                    {/each}
+                  </select>
+                </div>
+              {/if}
             </div>
           {/if}
         </div>
@@ -1400,6 +1953,28 @@
               placeholder={hexSend ? "HEX: 01 02 03 FF" : "输入发送数据..."}
               oncontextmenu={(e) => e.stopPropagation()}
             ></textarea>
+
+            <!-- 历史指令下拉框 -->
+            {#if commandHistory.length > 0}
+              <div class="command-history">
+                <label for="history-select">历史指令:</label>
+                <select
+                  id="history-select"
+                  onchange={(e) => {
+                    const value = (e.target as HTMLSelectElement).value;
+                    if (value) selectFromHistory(value);
+                  }}
+                >
+                  <option value="">选择历史指令...</option>
+                  {#each commandHistory as cmd, index}
+                    <option value={cmd}>
+                      {cmd.length > 50 ? cmd.substring(0, 50) + "..." : cmd}
+                    </option>
+                  {/each}
+                </select>
+              </div>
+            {/if}
+
             <div class="send-buttons">
               <button
                 class="send-btn"

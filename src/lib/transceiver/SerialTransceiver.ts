@@ -103,4 +103,44 @@ export class SerialTransceiver implements DataTransceiver {
     updateConfig(config: Partial<SerialConfig>): void {
         this.config = { ...this.config, ...config };
     }
+
+    // 设置 RTS (Request To Send) 信号
+    async setRTS(level: boolean): Promise<void> {
+        if (!this.connected || !this.port) {
+            throw new Error("Not connected");
+        }
+        await this.port.writeRequestToSend(level);
+    }
+
+    // 设置 DTR (Data Terminal Ready) 信号
+    async setDTR(level: boolean): Promise<void> {
+        if (!this.connected || !this.port) {
+            throw new Error("Not connected");
+        }
+        await this.port.writeDataTerminalReady(level);
+    }
+
+    // 读取 CTS (Clear To Send) 信号
+    async readCTS(): Promise<boolean> {
+        if (!this.connected || !this.port) {
+            throw new Error("Not connected");
+        }
+        return await this.port.readClearToSend();
+    }
+
+    // 读取 DSR (Data Set Ready) 信号
+    async readDSR(): Promise<boolean> {
+        if (!this.connected || !this.port) {
+            throw new Error("Not connected");
+        }
+        return await this.port.readDataSetReady();
+    }
+
+    // 读取 DCD (Data Carrier Detect) 信号
+    async readDCD(): Promise<boolean> {
+        if (!this.connected || !this.port) {
+            throw new Error("Not connected");
+        }
+        return await this.port.readCarrierDetect();
+    }
 }
