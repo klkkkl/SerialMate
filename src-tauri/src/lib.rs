@@ -152,9 +152,9 @@ pub fn run() {
         .plugin(tauri_plugin_udp::init())
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![greet, get_local_ips])
-        .setup(|app| {
+        .setup(|_app| {
             #[cfg(windows)]
-            usb_monitor::start_usb_monitor(app.handle().clone());
+            usb_monitor::start_usb_monitor(_app.handle().clone());
             Ok(())
         })
         .run(tauri::generate_context!())

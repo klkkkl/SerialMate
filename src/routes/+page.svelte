@@ -803,26 +803,6 @@
     }
   }
 
-  // 格式化单个字节为字符显示
-  function formatByte(byte: number): string {
-    try {
-      if (textEncoding === "ascii") {
-        return byte >= 32 && byte <= 126 ? String.fromCharCode(byte) : ".";
-      }
-      // 对于多字节编码，单字节显示可能不完整，简化处理
-      if (byte >= 32 && byte <= 126) {
-        return String.fromCharCode(byte);
-      }
-      if (byte > 127) {
-        // 高位字节显示为点，实际多字节字符需要组合显示
-        return ".";
-      }
-      return ".";
-    } catch {
-      return ".";
-    }
-  }
-
   // 解析字节数据为字符项数组，每个字符项包含显示字符和对应的字节索引范围
   interface CharItem {
     char: string;
@@ -1360,14 +1340,69 @@
       saveSettings();
     }, 100);
   });
+
+  // 🎮 彩蛋：Konami Code (↑↑↓↓←→←→BA)
+  const konamiCode = [
+    "ArrowUp",
+    "ArrowUp",
+    "ArrowDown",
+    "ArrowDown",
+    "ArrowLeft",
+    "ArrowRight",
+    "ArrowLeft",
+    "ArrowRight",
+    "KeyB",
+    "KeyA",
+  ];
+  let konamiIndex = 0;
+  let easterEggActive = $state(false);
+
+  function handleKonamiCode(event: KeyboardEvent) {
+    if (event.code === konamiCode[konamiIndex]) {
+      konamiIndex++;
+      if (konamiIndex === konamiCode.length) {
+        triggerEasterEgg();
+        konamiIndex = 0;
+      }
+    } else {
+      konamiIndex = event.code === konamiCode[0] ? 1 : 0;
+    }
+  }
+
+  function triggerEasterEgg() {
+    if (easterEggActive) return;
+    easterEggActive = true;
+    appendSystemMessage("🎉 恭喜你发现了彩蛋！Konami Code 激活！🎮");
+
+    // 3秒后关闭彩蛋效果
+    setTimeout(() => {
+      easterEggActive = false;
+    }, 3000);
+  }
+
+  // 监听键盘事件
+  $effect(() => {
+    window.addEventListener("keydown", handleKonamiCode);
+    return () => {
+      window.removeEventListener("keydown", handleKonamiCode);
+    };
+  });
 </script>
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
-<main class="app-container" oncontextmenu={(e) => e.preventDefault()}>
+<main
+  class="app-container"
+  class:easter-egg={easterEggActive}
+  oncontextmenu={(e) => e.preventDefault()}
+>
   <header class="header">
     <div class="header-title">
-      <h1>SerialMate</h1>
-      <span class="subtitle">串口调试助手</span>
+      <h1 class:rainbow-text={easterEggActive}>SerialMate</h1>
+      <span class="subtitle"
+        >{easterEggActive
+          ? "🎮 Konami Code Activated! 🎮"
+          : "串口调试助手"}</span
+      >
     </div>
     <div class="header-stats">
       <span>RX: {rxBytes}</span>
@@ -1977,12 +2012,17 @@
                 <select
                   id="history-select"
                   onchange={(e) => {
-                    const value = (e.target as HTMLSelectElement).value;
-                    if (value) selectFromHistory(value);
+                    const select = e.target as HTMLSelectElement;
+                    const value = select.value;
+                    if (value) {
+                      selectFromHistory(value);
+                      // 重置选择，允许重复选择同一条指令
+                      select.value = "";
+                    }
                   }}
                 >
                   <option value="">选择历史指令...</option>
-                  {#each commandHistory as cmd, index}
+                  {#each commandHistory as cmd}
                     <option value={cmd}>
                       {cmd.length > 50 ? cmd.substring(0, 50) + "..." : cmd}
                     </option>

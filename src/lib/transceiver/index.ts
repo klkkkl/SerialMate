@@ -1,10 +1,10 @@
 // 类型导出
 export type {
-    DataTransceiver,
-    SerialConfig,
-    TcpClientConfig,
-    TcpServerConfig,
-    UdpConfig,
+  DataTransceiver,
+  SerialConfig,
+  TcpClientConfig,
+  TcpServerConfig,
+  UdpConfig,
 } from "./types";
 
 export { DataBits, FlowControl, Parity, StopBits } from "./types";
@@ -17,8 +17,8 @@ export { UdpTransceiver } from "./UdpTransceiver";
 
 // 辅助函数导出
 export {
-    dataToString,
-    hexStringToBytes,
-    stringToBytes,
-    bytesToString,
+  dataToString,
+  hexStringToBytes,
+  stringToBytes,
+  bytesToString,
 } from "./utils";
