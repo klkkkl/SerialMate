@@ -1270,12 +1270,19 @@
 
   // 初始化：加载设置并刷新串口
   let initialized = false;
+  let settingsLoaded = false; // 标记设置是否已加载完成
   let unlistenUsb: UnlistenFn | null = null;
 
   $effect(() => {
+    // 同步加载设置（不会触发依赖追踪问题，因为在 effect 内部）
     loadSettings();
-    refreshPorts();
-    refreshLocalIps();
+    settingsLoaded = true;
+
+    // 异步操作放到 microtask 中，避免阻塞渲染
+    queueMicrotask(() => {
+      refreshPorts();
+      refreshLocalIps();
+    });
 
     // 监听 USB 设备变化事件
     listen("usb-device-changed", () => {
@@ -1313,7 +1320,8 @@
     prevConnectionType = currentType;
   });
 
-  // 监听所有设置变化并保存
+  // 监听所有设置变化并保存（使用防抖避免频繁写入）
+  let saveTimeout: ReturnType<typeof setTimeout> | null = null;
   $effect(() => {
     // 读取所有设置变量以触发依赖追踪
     const _ = [
@@ -1342,7 +1350,15 @@
       tcpServerHistory,
       udpHistory,
     ];
-    saveSettings();
+
+    // 只有在设置加载完成后才保存，避免初始化时的循环触发
+    if (!settingsLoaded) return;
+
+    // 使用防抖，避免频繁保存
+    if (saveTimeout) clearTimeout(saveTimeout);
+    saveTimeout = setTimeout(() => {
+      saveSettings();
+    }, 100);
   });
 </script>
 

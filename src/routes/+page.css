@@ -82,8 +82,8 @@
   .bottom-panel {
       display: flex;
       gap: 0.5rem;
-      height: 260px;
-      min-height: 260px;
+      height: 230px;
+      min-height: 230px;
       flex-shrink: 0;
   }
 
