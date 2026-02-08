@@ -230,31 +230,45 @@
     }
   }
 
+  // 通用历史配置管理函数
+  function addToHistory<T>(
+    history: T[],
+    config: T,
+    keyFn: (c: T) => string,
+    maxItems = 10,
+  ): T[] {
+    const key = keyFn(config);
+    return [config, ...history.filter((c) => keyFn(c) !== key)].slice(
+      0,
+      maxItems,
+    );
+  }
+
   // 添加 TCP 历史配置
   function addTcpHistory(config: TcpHistoryConfig) {
-    const key = `${config.remoteHost}:${config.remotePort}:${config.localPort}`;
-    tcpHistory = tcpHistory.filter(
-      (c) => `${c.remoteHost}:${c.remotePort}:${c.localPort}` !== key,
+    tcpHistory = addToHistory(
+      tcpHistory,
+      config,
+      (c) => `${c.remoteHost}:${c.remotePort}:${c.localPort}`,
     );
-    tcpHistory = [config, ...tcpHistory].slice(0, 10);
   }
 
   // 添加 TCP Server 历史配置
   function addTcpServerHistory(config: TcpServerHistoryConfig) {
-    const key = `${config.bindIp}:${config.listenPort}`;
-    tcpServerHistory = tcpServerHistory.filter(
-      (c) => `${c.bindIp}:${c.listenPort}` !== key,
+    tcpServerHistory = addToHistory(
+      tcpServerHistory,
+      config,
+      (c) => `${c.bindIp}:${c.listenPort}`,
     );
-    tcpServerHistory = [config, ...tcpServerHistory].slice(0, 10);
   }
 
   // 添加 UDP 历史配置
   function addUdpHistory(config: UdpHistoryConfig) {
-    const key = `${config.remoteHost}:${config.remotePort}:${config.localPort}`;
-    udpHistory = udpHistory.filter(
-      (c) => `${c.remoteHost}:${c.remotePort}:${c.localPort}` !== key,
+    udpHistory = addToHistory(
+      udpHistory,
+      config,
+      (c) => `${c.remoteHost}:${c.remotePort}:${c.localPort}`,
     );
-    udpHistory = [config, ...udpHistory].slice(0, 10);
   }
 
   // 应用 TCP 历史配置
@@ -482,8 +496,19 @@
     sendData = command;
   }
 
-  // 获取过滤后的数据行
-  function getFilteredDataLines(): { line: DataLine; originalIndex: number }[] {
+  // 检查是否有搜索/过滤条件 (派生状态)
+  let hasFilter = $derived(
+    searchText.trim() !== "" || filterDirection !== "all",
+  );
+
+  // 检查是否有搜索文本 (派生状态)
+  let hasSearchText = $derived(searchText.trim() !== "");
+
+  // 搜索查询字符串 (派生状态，避免重复计算)
+  let searchQuery = $derived(searchText.trim().toLowerCase());
+
+  // 获取过滤后的数据行 (派生状态)
+  let filteredDataLines = $derived.by(() => {
     let result = dataLines.map((line, index) => ({
       line,
       originalIndex: index,
@@ -495,14 +520,13 @@
     }
 
     // 按搜索文本过滤
-    if (searchText.trim()) {
-      const query = searchText.trim().toLowerCase();
+    if (searchQuery) {
       result = result.filter((item) => {
         const line = item.line;
 
         // 系统消息只搜索文本
         if (line.type === "system") {
-          return line.text.toLowerCase().includes(query);
+          return line.text.toLowerCase().includes(searchQuery);
         }
 
         if (!line.data) return false;
@@ -512,33 +536,25 @@
           const hexStr = Array.from(line.data)
             .map((b) => b.toString(16).padStart(2, "0").toUpperCase())
             .join(" ");
-          return hexStr.toLowerCase().includes(query.replace(/\s+/g, " "));
+          return hexStr
+            .toLowerCase()
+            .includes(searchQuery.replace(/\s+/g, " "));
         } else {
           // 文本搜索模式：搜索解码后的文本
           const text = formatText(line.data);
-          return text.toLowerCase().includes(query);
+          return text.toLowerCase().includes(searchQuery);
         }
       });
     }
 
     return result;
-  }
-
-  // 检查是否有搜索/过滤条件
-  function hasFilter(): boolean {
-    return searchText.trim() !== "" || filterDirection !== "all";
-  }
-
-  // 检查是否有搜索文本
-  function hasSearchText(): boolean {
-    return searchText.trim() !== "";
-  }
+  });
 
   // 检查字节是否在搜索匹配范围内（用于HEX高亮）
   function isByteInSearchMatch(data: Uint8Array, byteIdx: number): boolean {
-    if (!hasSearchText() || searchMode !== "hex") return false;
+    if (!hasSearchText || searchMode !== "hex") return false;
 
-    const query = searchText.trim().toLowerCase().replace(/\s+/g, "");
+    const query = searchQuery.replace(/\s+/g, "");
     if (!query) return false;
 
     const hexStr = Array.from(data)
@@ -560,10 +576,8 @@
 
   // 检查字符项是否在搜索匹配范围内（用于文本高亮）
   function isCharInSearchMatch(data: Uint8Array, item: CharItem): boolean {
-    if (!hasSearchText() || searchMode !== "text") return false;
-
-    const query = searchText.trim().toLowerCase();
-    if (!query) return false;
+    if (!hasSearchText || searchMode !== "text") return false;
+    if (!searchQuery) return false;
 
     const text = formatText(data);
     const lowerText = text.toLowerCase();
@@ -571,8 +585,8 @@
 
     // 找到所有匹配位置
     let pos = 0;
-    while ((pos = lowerText.indexOf(query, pos)) !== -1) {
-      const endPos = pos + query.length - 1;
+    while ((pos = lowerText.indexOf(searchQuery, pos)) !== -1) {
+      const endPos = pos + searchQuery.length - 1;
       // 检查item是否在这个匹配范围内
       // 需要找到对应的字符索引
       let charStartIdx = -1;
@@ -608,7 +622,7 @@
 
   // 高亮系统消息文本
   function highlightSystemText(text: string): string {
-    if (!hasSearchText()) return escapeHtml(text);
+    if (!hasSearchText) return escapeHtml(text);
 
     const query = searchText.trim();
     if (!query) return escapeHtml(text);
@@ -623,7 +637,7 @@
   // 高亮数据文本（用于纯文本模式）
   function highlightDataText(data: Uint8Array): string {
     const text = formatText(data);
-    if (!hasSearchText() || searchMode !== "text") return escapeHtml(text);
+    if (!hasSearchText || searchMode !== "text") return escapeHtml(text);
 
     const query = searchText.trim();
     if (!query) return escapeHtml(text);
@@ -728,16 +742,29 @@
     }
   }
 
-  // 添加数据行
+  // 最大保留行数
+  const MAX_DATA_LINES = 5000;
+
+  // 添加数据行（带自动清理）
+  function formatTimestamp(): string {
+    const now = new Date();
+    return `${now.toLocaleTimeString()}.${now.getMilliseconds().toString().padStart(3, "0")}`;
+  }
+
   function appendDataLine(type: "rx" | "tx", data: Uint8Array) {
     const line: DataLine = {
       type,
       direction: type,
       data,
       text: "",
-      timestamp: showTimestamp ? new Date().toLocaleTimeString() : undefined,
+      timestamp: showTimestamp ? formatTimestamp() : undefined,
     };
-    dataLines = [...dataLines, line];
+    // 超过最大行数时保留后半部分
+    if (dataLines.length >= MAX_DATA_LINES) {
+      dataLines = [...dataLines.slice(-Math.floor(MAX_DATA_LINES / 2)), line];
+    } else {
+      dataLines = [...dataLines, line];
+    }
     scrollToBottom();
   }
 
@@ -748,9 +775,14 @@
       direction: "system",
       data: null,
       text,
-      timestamp: showTimestamp ? new Date().toLocaleTimeString() : undefined,
+      timestamp: showTimestamp ? formatTimestamp() : undefined,
     };
-    dataLines = [...dataLines, line];
+    // 超过最大行数时保留后半部分
+    if (dataLines.length >= MAX_DATA_LINES) {
+      dataLines = [...dataLines.slice(-Math.floor(MAX_DATA_LINES / 2)), line];
+    } else {
+      dataLines = [...dataLines, line];
+    }
     scrollToBottom();
   }
 
@@ -899,13 +931,8 @@
     return result;
   }
 
-  // 获取规范化的选中范围（确保 start <= end）
-  function getNormalizedSelection(): {
-    startLine: number;
-    startByte: number;
-    endLine: number;
-    endByte: number;
-  } | null {
+  // 规范化的选中范围（派生状态，确保 start <= end）
+  let normalizedSelection = $derived.by(() => {
     if (
       selStartLine === null ||
       selStartByte === null ||
@@ -927,14 +954,13 @@
     }
 
     return { startLine, startByte, endLine, endByte };
-  }
+  });
 
   // 检查字符项是否被选中（支持跨行）
   function isCharSelected(lineIdx: number, item: CharItem): boolean {
-    const sel = getNormalizedSelection();
-    if (!sel) return false;
+    if (!normalizedSelection) return false;
 
-    const { startLine, startByte, endLine, endByte } = sel;
+    const { startLine, startByte, endLine, endByte } = normalizedSelection;
 
     // 完全在选中范围之外
     if (lineIdx < startLine || lineIdx > endLine) return false;
@@ -959,10 +985,9 @@
 
   // 检查字节是否被选中（支持跨行）
   function isByteSelected(lineIdx: number, byteIdx: number): boolean {
-    const sel = getNormalizedSelection();
-    if (!sel) return false;
+    if (!normalizedSelection) return false;
 
-    const { startLine, startByte, endLine, endByte } = sel;
+    const { startLine, startByte, endLine, endByte } = normalizedSelection;
 
     // 完全在选中范围之外
     if (lineIdx < startLine || lineIdx > endLine) return false;
@@ -985,13 +1010,6 @@
     return false;
   }
 
-  // 格式化 HEX 显示
-  function formatHex(data: Uint8Array): string {
-    return Array.from(data)
-      .map((b) => b.toString(16).padStart(2, "0").toUpperCase())
-      .join(" ");
-  }
-
   // 清除选中
   function clearSelection() {
     selStartLine = null;
@@ -1002,10 +1020,9 @@
 
   // 获取选中的所有字节数据
   function getSelectedBytes(): Uint8Array {
-    const sel = getNormalizedSelection();
-    if (!sel) return new Uint8Array(0);
+    if (!normalizedSelection) return new Uint8Array(0);
 
-    const { startLine, startByte, endLine, endByte } = sel;
+    const { startLine, startByte, endLine, endByte } = normalizedSelection;
     const chunks: Uint8Array[] = [];
 
     for (let i = startLine; i <= endLine; i++) {
@@ -1138,7 +1155,7 @@
   function handleKeydown(event: KeyboardEvent) {
     // Ctrl+C 复制
     if ((event.ctrlKey || event.metaKey) && event.key === "c") {
-      if (getNormalizedSelection() !== null) {
+      if (normalizedSelection !== null) {
         event.preventDefault();
         copySelectedData();
       }
@@ -1282,6 +1299,37 @@
       if (unlistenUsb) {
         unlistenUsb();
       }
+    };
+  });
+
+  // 全局空格键快捷发送：输入框失去焦点时按空格键直接发送数据
+  $effect(() => {
+    function handleGlobalKeydown(e: KeyboardEvent) {
+      // 只处理空格键
+      if (e.code !== "Space") return;
+
+      // 如果焦点在输入元素上，不处理
+      const activeEl = document.activeElement;
+      if (
+        activeEl instanceof HTMLInputElement ||
+        activeEl instanceof HTMLTextAreaElement ||
+        activeEl instanceof HTMLSelectElement ||
+        (activeEl as HTMLElement)?.isContentEditable
+      ) {
+        return;
+      }
+
+      // 如果有数据可发送，则发送
+      if (sendData.trim()) {
+        e.preventDefault();
+        sendMessage();
+      }
+    }
+
+    window.addEventListener("keydown", handleGlobalKeydown);
+
+    return () => {
+      window.removeEventListener("keydown", handleGlobalKeydown);
     };
   });
 
@@ -1464,7 +1512,7 @@
                 <option value="text">文本</option>
                 <option value="hex">HEX</option>
               </select>
-              {#if hasFilter()}
+              {#if hasFilter}
                 <button
                   class="clear-search-btn"
                   onclick={clearSearch}
@@ -1472,9 +1520,9 @@
                 >
               {/if}
             </div>
-            {#if hasFilter()}
+            {#if hasFilter}
               <span class="filter-count"
-                >{getFilteredDataLines().length}/{dataLines.length}</span
+                >{filteredDataLines.length}/{dataLines.length}</span
               >
             {/if}
           </div>
@@ -1501,7 +1549,7 @@
             aria-label="接收数据区域"
             aria-readonly="true"
           >
-            {#each getFilteredDataLines() as { line, originalIndex }}
+            {#each filteredDataLines as { line, originalIndex }}
               <div class="data-row {line.direction}">
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
                 <div class="ascii-col">
@@ -1565,7 +1613,7 @@
                   {#if line.data}
                     <!-- svelte-ignore a11y_no_static_element_interactions -->
                     <span class="data-content"
-                      >{#each Array.from(line.data) as byte, byteIdx}<span
+                      >{#each line.data as byte, byteIdx}<span
                           class="byte-hex"
                           class:selected={isByteSelected(
                             originalIndex,
@@ -1612,16 +1660,16 @@
                 </div>
               </div>
             {/each}
-            {#if getFilteredDataLines().length === 0}
+            {#if filteredDataLines.length === 0}
               <div class="placeholder">
-                {hasFilter() ? "没有匹配的数据" : "接收的数据将显示在这里..."}
+                {hasFilter ? "没有匹配的数据" : "接收的数据将显示在这里..."}
               </div>
             {/if}
           </div>
         {:else}
           <!-- 纯文本模式：使用 div 显示以支持高亮 -->
           <div id="receive-container" class="receive-container text-mode">
-            {#each getFilteredDataLines() as { line }}
+            {#each filteredDataLines as { line }}
               <div class="text-line {line.direction}">
                 {#if showTimestamp && line.timestamp}
                   <span class="timestamp">[{line.timestamp}]</span>
@@ -1644,9 +1692,9 @@
                 {/if}
               </div>
             {/each}
-            {#if getFilteredDataLines().length === 0}
+            {#if filteredDataLines.length === 0}
               <div class="placeholder">
-                {hasFilter() ? "没有匹配的数据" : "接收的数据将显示在这里..."}
+                {hasFilter ? "没有匹配的数据" : "接收的数据将显示在这里..."}
               </div>
             {/if}
           </div>
