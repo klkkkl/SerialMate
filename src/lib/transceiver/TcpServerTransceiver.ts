@@ -7,22 +7,26 @@ import {
   type Payload as TcpPayload,
 } from "@kuyoonjo/tauri-plugin-tcp";
 import type { UnlistenFn } from "@tauri-apps/api/event";
+import { BaseTransceiver } from "./BaseTransceiver";
 import type { DataTransceiver, TcpServerConfig } from "./types";
 
 // TCP 服务器收发器
-export class TcpServerTransceiver implements DataTransceiver {
-  private config: TcpServerConfig;
-  private connected: boolean = false;
-  private dataCallback: ((data: string | Uint8Array) => void) | null = null;
-  private disconnectCallback: (() => void) | null = null;
+export class TcpServerTransceiver
+  extends BaseTransceiver
+  implements DataTransceiver
+{
   private unlistenFn: UnlistenFn | null = null;
   private readonly id: string;
   private clients: Set<string> = new Set();
 
-  constructor(config: TcpServerConfig) {
-    this.config = config;
-
+  constructor(private readonly config: TcpServerConfig) {
+    super();
     this.id = `tcp-server-${Date.now()}`;
+  }
+
+  private clearListener(): void {
+    this.unlistenFn?.();
+    this.unlistenFn = null;
   }
 
   async connect(): Promise<void> {
@@ -57,15 +61,17 @@ export class TcpServerTransceiver implements DataTransceiver {
         this.clients.delete(payload.event.disconnect);
         console.log(`Client disconnected: ${payload.event.disconnect}`);
       } else if (payload.event.message) {
-        const data = new Uint8Array(payload.event.message.data);
-        if (this.dataCallback) {
-          this.dataCallback(data);
-        }
+        this.emitData(new Uint8Array(payload.event.message.data));
       }
     });
 
-    await tcpBind(this.id, bindAddr);
-    this.connected = true;
+    try {
+      await tcpBind(this.id, bindAddr);
+      this.connected = true;
+    } catch (error) {
+      this.clearListener();
+      throw error;
+    }
   }
 
   async disconnect(): Promise<void> {
@@ -85,24 +91,14 @@ export class TcpServerTransceiver implements DataTransceiver {
     } catch (e) {
       // 忽略错误（可能本来就没绑定）
     } finally {
-      if (this.unlistenFn) {
-        this.unlistenFn();
-        this.unlistenFn = null;
-      }
+      this.clearListener();
       this.clients.clear();
-      const wasConnected = this.connected;
-      this.connected = false;
-      // 只有之前是连接状态才触发断开回调
-      if (wasConnected && this.disconnectCallback) {
-        this.disconnectCallback();
-      }
+      this.markDisconnected();
     }
   }
 
   async send(data: string | Uint8Array): Promise<number> {
-    if (!this.connected) {
-      throw new Error("Not listening");
-    }
+    this.assertConnected("Not listening");
 
     const sendData = typeof data === "string" ? data : Array.from(data);
 
@@ -116,30 +112,11 @@ export class TcpServerTransceiver implements DataTransceiver {
 
   // 发送给指定客户端
   async sendTo(clientAddr: string, data: string | Uint8Array): Promise<number> {
-    if (!this.connected) {
-      throw new Error("Not listening");
-    }
+    this.assertConnected("Not listening");
 
     const sendData = typeof data === "string" ? data : Array.from(data);
     await tcpSend(this.id, sendData, clientAddr);
     return typeof data === "string" ? data.length : data.length;
-  }
-
-  onData(callback: (data: string | Uint8Array) => void): void {
-    this.dataCallback = callback;
-  }
-
-  onDisconnect(callback: () => void): void {
-    this.disconnectCallback = callback;
-  }
-
-  offAllCallbacks(): void {
-    this.dataCallback = null;
-    this.disconnectCallback = null;
-  }
-
-  isConnected(): boolean {
-    return this.connected;
   }
 
   getConnectedClients(): string[] {

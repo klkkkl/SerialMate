@@ -3,19 +3,19 @@ import {
   FlowControl,
   type PortInfo,
 } from "tauri-plugin-serialplugin-api";
+import { BaseTransceiver } from "./BaseTransceiver";
 import type { DataTransceiver, SerialConfig } from "./types";
 
 // 串口收发器
-export class SerialTransceiver implements DataTransceiver {
+export class SerialTransceiver
+  extends BaseTransceiver
+  implements DataTransceiver
+{
   private port: SerialPort | null = null;
-  private config: SerialConfig;
-  private connected: boolean = false;
-  private dataCallback: ((data: string | Uint8Array) => void) | null = null;
-  private disconnectCallback: (() => void) | null = null;
   private unlistenFn: (() => void) | null = null;
 
-  constructor(config: SerialConfig) {
-    this.config = config;
+  constructor(private config: SerialConfig) {
+    super();
   }
 
   // 获取可用串口列表
@@ -28,7 +28,7 @@ export class SerialTransceiver implements DataTransceiver {
       throw new Error("Already connected");
     }
 
-    this.port = new SerialPort({
+    const port = new SerialPort({
       path: this.config.port,
       baudRate: this.config.baudRate,
       dataBits: this.config.dataBits,
@@ -37,17 +37,31 @@ export class SerialTransceiver implements DataTransceiver {
       flowControl: this.config.flowControl || FlowControl.None,
     });
 
-    await this.port.open();
-    await this.port.startListening();
+    try {
+      await port.open();
+      await port.startListening();
 
-    // 设置数据监听
-    this.unlistenFn = await this.port.listen((data) => {
-      if (this.dataCallback) {
-        this.dataCallback(data);
+      this.unlistenFn = await port.listen((data) => {
+        this.emitData(data);
+      });
+
+      this.port = port;
+      this.connected = true;
+    } catch (error) {
+      try {
+        await port.stopListening();
+      } catch {
+        // 忽略清理错误
       }
-    });
 
-    this.connected = true;
+      try {
+        await port.close();
+      } catch {
+        // 忽略清理错误
+      }
+
+      throw error;
+    }
   }
 
   async disconnect(): Promise<void> {
@@ -65,42 +79,19 @@ export class SerialTransceiver implements DataTransceiver {
       // 忽略错误（可能本来就没连接）
     } finally {
       this.port = null;
-      const wasConnected = this.connected;
-      this.connected = false;
-      // 只有之前是连接状态才触发断开回调
-      if (wasConnected && this.disconnectCallback) {
-        this.disconnectCallback();
-      }
+      this.markDisconnected();
     }
   }
 
   async send(data: string | Uint8Array): Promise<number> {
-    if (!this.connected || !this.port) {
-      throw new Error("Not connected");
-    }
+    this.assertConnected();
+    if (!this.port) throw new Error("Not connected");
 
     if (typeof data === "string") {
       return await this.port.write(data);
     } else {
       return await this.port.writeBinary(data);
     }
-  }
-
-  onData(callback: (data: string | Uint8Array) => void): void {
-    this.dataCallback = callback;
-  }
-
-  onDisconnect(callback: () => void): void {
-    this.disconnectCallback = callback;
-  }
-
-  offAllCallbacks(): void {
-    this.dataCallback = null;
-    this.disconnectCallback = null;
-  }
-
-  isConnected(): boolean {
-    return this.connected;
   }
 
   // 更新配置
@@ -110,41 +101,36 @@ export class SerialTransceiver implements DataTransceiver {
 
   // 设置 RTS (Request To Send) 信号
   async setRTS(level: boolean): Promise<void> {
-    if (!this.connected || !this.port) {
-      throw new Error("Not connected");
-    }
+    this.assertConnected();
+    if (!this.port) throw new Error("Not connected");
     await this.port.writeRequestToSend(level);
   }
 
   // 设置 DTR (Data Terminal Ready) 信号
   async setDTR(level: boolean): Promise<void> {
-    if (!this.connected || !this.port) {
-      throw new Error("Not connected");
-    }
+    this.assertConnected();
+    if (!this.port) throw new Error("Not connected");
     await this.port.writeDataTerminalReady(level);
   }
 
   // 读取 CTS (Clear To Send) 信号
   async readCTS(): Promise<boolean> {
-    if (!this.connected || !this.port) {
-      throw new Error("Not connected");
-    }
+    this.assertConnected();
+    if (!this.port) throw new Error("Not connected");
     return await this.port.readClearToSend();
   }
 
   // 读取 DSR (Data Set Ready) 信号
   async readDSR(): Promise<boolean> {
-    if (!this.connected || !this.port) {
-      throw new Error("Not connected");
-    }
+    this.assertConnected();
+    if (!this.port) throw new Error("Not connected");
     return await this.port.readDataSetReady();
   }
 
   // 读取 DCD (Data Carrier Detect) 信号
   async readDCD(): Promise<boolean> {
-    if (!this.connected || !this.port) {
-      throw new Error("Not connected");
-    }
+    this.assertConnected();
+    if (!this.port) throw new Error("Not connected");
     return await this.port.readCarrierDetect();
   }
 }

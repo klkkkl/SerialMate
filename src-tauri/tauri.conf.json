@@ -5,13 +5,14 @@
   "identifier": "com.klkkk.serialmate",
   "build": {
     "beforeDevCommand": "pnpm dev",
-    "devUrl": "http://localhost:1420",
+    "devUrl": "http://localhost:1421",
     "beforeBuildCommand": "pnpm build",
     "frontendDist": "../build"
   },
   "app": {
     "windows": [
       {
+        "label": "main",
         "title": "serialmate",
         "width": 800,
         "height": 600
