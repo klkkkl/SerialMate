@@ -3,10 +3,16 @@
   "identifier": "default",
   "description": "Capability for the main window",
   "windows": [
-    "main"
+    "main",
+    "serialmate-*"
   ],
   "permissions": [
     "core:default",
+    "core:webview:default",
+    "core:webview:allow-create-webview-window",
+    "core:webview:allow-webview-close",
+    "core:webview:allow-set-webview-size",
+    "core:webview:allow-set-webview-position",
     "opener:default",
     "serialplugin:default",
     "tcp:default",

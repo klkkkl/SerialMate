@@ -3,37 +3,57 @@
   import { listen, type UnlistenFn } from "@tauri-apps/api/event";
   import { save } from "@tauri-apps/plugin-dialog";
   import { writeTextFile } from "@tauri-apps/plugin-fs";
-  import * as iconv from "iconv-lite";
+  import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
+  import { browser } from "$app/environment";
   import { Buffer } from "buffer";
+  import * as iconv from "iconv-lite";
+  import type { PortInfo } from "tauri-plugin-serialplugin-api";
   import "./+page.css";
   import {
     SerialTransceiver,
-    TcpClientTransceiver,
-    TcpServerTransceiver,
-    UdpTransceiver,
     dataToString,
     hexStringToBytes,
-    DataBits,
-    StopBits,
-    Parity,
-    FlowControl,
     type DataTransceiver,
-    type SerialConfig,
-    type TcpClientConfig,
-    type TcpServerConfig,
-    type UdpConfig,
   } from "$lib/transceiver";
+  import {
+    CONNECTION_TIMEOUT,
+    createTransceiver,
+  } from "$lib/serialmate/connection";
+  import { HISTORY_LIMITS, upsertRecentItem } from "$lib/serialmate/history";
+  import {
+    acquireSerialPortLock,
+    releaseSerialPortLock,
+    releaseWindowSerialPortLocks,
+  } from "$lib/serialmate/serialLock";
+  import type {
+    AppSettings,
+    ConnectionType,
+    DataLine,
+    FilterDirection,
+    LineEnding,
+    SearchMode,
+    TextEncoding,
+    TcpHistoryConfig,
+    TcpServerHistoryConfig,
+    UdpHistoryConfig,
+  } from "$lib/serialmate/types";
+
+  interface SerialPortOption {
+    label: string;
+    path: string;
+  }
 
   // 连接类型：串口、TCP、TCP Server、UDP
-  let connectionType = $state<"serial" | "tcp" | "tcpserver" | "udp">("serial");
+  let connectionType = $state<ConnectionType>("serial");
   let isConnected = $state(false);
   let isConnecting = $state(false); // 正在连接中
 
   // 当前收发器实例
   let transceiver: DataTransceiver | null = $state(null);
+  let lockedSerialPort = $state<string | null>(null);
 
   // 串口配置
-  let serialPorts = $state<string[]>([]);
+  let serialPorts = $state<SerialPortOption[]>([]);
   let selectedPort = $state("");
   let baudRate = $state("115200");
   let dataBits = $state("8");
@@ -56,33 +76,10 @@
   let tcpServerBindIp = $state("0.0.0.0"); // TCP Server 绑定IP
   let localIpAddresses = $state<string[]>(["0.0.0.0", "127.0.0.1"]); // 本机可用IP列表
 
-  // 网络连接历史配置（最多10组不重复）
-  interface TcpHistoryConfig {
-    remoteHost: string;
-    remotePort: string;
-    localPort: string;
-  }
-  interface TcpServerHistoryConfig {
-    bindIp: string;
-    listenPort: string;
-  }
-  interface UdpHistoryConfig {
-    remoteHost: string;
-    remotePort: string;
-    localPort: string;
-  }
   let tcpHistory = $state<TcpHistoryConfig[]>([]);
   let tcpServerHistory = $state<TcpServerHistoryConfig[]>([]);
   let udpHistory = $state<UdpHistoryConfig[]>([]);
 
-  // 数据显示
-  interface DataLine {
-    type: "rx" | "tx" | "system";
-    direction: "rx" | "tx" | "system"; // 方向标识
-    data: Uint8Array | null; // null 表示系统消息
-    text: string; // 系统消息或原始文本
-    timestamp?: string;
-  }
   let dataLines = $state<DataLine[]>([]);
   let sendData = $state("");
 
@@ -98,12 +95,12 @@
   let showTimestamp = $state(false);
   let hexSend = $state(false);
   let showHexArea = $state(true);
-  let lineEnding = $state<"none" | "crlf" | "cr" | "lf">("none");
+  let lineEnding = $state<LineEnding>("none");
 
   // 搜索和过滤
   let searchText = $state("");
-  let searchMode = $state<"text" | "hex">("text");
-  let filterDirection = $state<"all" | "rx" | "tx">("all");
+  let searchMode = $state<SearchMode>("text");
+  let filterDirection = $state<FilterDirection>("all");
 
   // 保存的滚动位置（用于 HEX 切换时保持位置）
   let savedScrollRatio = 0;
@@ -142,23 +139,116 @@
   let selEndLine = $state<number | null>(null);
   let selEndByte = $state<number | null>(null);
 
-  let textEncoding = $state<"gb2312" | "utf-8" | "gbk" | "big5" | "ascii">(
-    "gb2312",
-  );
+  let textEncoding = $state<TextEncoding>("gb2312");
 
   // 右键菜单状态
   let contextMenuVisible = $state(false);
   let contextMenuX = $state(0);
   let contextMenuY = $state(0);
   let contextMenuType = $state<"text" | "hex">("hex");
+  let receiveContainer = $state<HTMLDivElement | null>(null);
+
+  const currentWindowLabel = browser ? WebviewWindow.getCurrent().label : "main";
+
+  function isMacOS(): boolean {
+    return typeof navigator !== "undefined" && /mac/i.test(navigator.userAgent);
+  }
+
+  function getPortPath(key: string, info: Partial<PortInfo> | undefined): string {
+    const rawPath = info?.path;
+    if (typeof rawPath === "string" && rawPath && rawPath !== "Unknown") {
+      return rawPath;
+    }
+    return key;
+  }
+
+  function stripMacSerialPrefix(path: string | null | undefined): string | null {
+    if (typeof path !== "string" || path.length === 0) {
+      return null;
+    }
+    const match = path.match(/^\/dev\/(?:cu|tty)\.(.+)$/);
+    return match ? match[1] : null;
+  }
+
+  function normalizeSerialPorts(
+    ports: Record<string, PortInfo>,
+  ): SerialPortOption[] {
+    const portEntries = Object.entries(ports).filter(
+      ([key]) => typeof key === "string" && key.length > 0,
+    );
+    if (!isMacOS()) {
+      return portEntries.map(([key, info]) => {
+        const path = getPortPath(key, info);
+        return { label: path, path };
+      });
+    }
+
+    const normalizedPorts = new Map<string, SerialPortOption>();
+
+    for (const [key, info] of portEntries) {
+      const path = getPortPath(key, info);
+      const strippedLabel = stripMacSerialPrefix(path);
+
+      if (!strippedLabel) {
+        normalizedPorts.set(path, { label: path, path });
+        continue;
+      }
+
+      const existing = normalizedPorts.get(strippedLabel);
+      const prefersCurrentPath = path.startsWith("/dev/cu.");
+
+      if (!existing || prefersCurrentPath) {
+        normalizedPorts.set(strippedLabel, {
+          label: strippedLabel,
+          path,
+        });
+      }
+    }
+
+    return Array.from(normalizedPorts.values());
+  }
+
+  async function openNewWindow() {
+    if (!browser) {
+      return;
+    }
+
+    const label = `serialmate-${Date.now()}`;
+    const newWindow = new WebviewWindow(label, {
+      title: "SerialMate",
+      url: "/",
+      width: 800,
+      height: 600,
+    });
+
+    newWindow.once("tauri://error", (event) => {
+      console.error("新建窗口失败:", event.payload);
+      appendSystemMessage(`新建窗口失败: ${event.payload}`);
+    });
+  }
 
   // 刷新串口列表
   async function refreshPorts() {
     try {
       const ports = await SerialTransceiver.getAvailablePorts();
-      serialPorts = Object.keys(ports);
-      if (serialPorts.length > 0 && !selectedPort) {
-        selectedPort = serialPorts[0];
+      serialPorts = normalizeSerialPorts(ports);
+
+      if (serialPorts.length === 0) {
+        selectedPort = "";
+        return;
+      }
+
+      const selectedPortLabel = stripMacSerialPrefix(selectedPort);
+      const matchedPort = serialPorts.find(
+        (portOption) =>
+          portOption.path === selectedPort ||
+          (selectedPortLabel !== null && portOption.label === selectedPortLabel),
+      );
+
+      if (matchedPort) {
+        selectedPort = matchedPort.path;
+      } else {
+        selectedPort = serialPorts[0].path;
       }
     } catch (error) {
       console.error("刷新串口失败:", error);
@@ -246,28 +336,31 @@
 
   // 添加 TCP 历史配置
   function addTcpHistory(config: TcpHistoryConfig) {
-    tcpHistory = addToHistory(
+    tcpHistory = upsertRecentItem(
       tcpHistory,
       config,
-      (c) => `${c.remoteHost}:${c.remotePort}:${c.localPort}`,
+      (item) => `${item.remoteHost}:${item.remotePort}:${item.localPort}`,
+      HISTORY_LIMITS.network,
     );
   }
 
   // 添加 TCP Server 历史配置
   function addTcpServerHistory(config: TcpServerHistoryConfig) {
-    tcpServerHistory = addToHistory(
+    tcpServerHistory = upsertRecentItem(
       tcpServerHistory,
       config,
-      (c) => `${c.bindIp}:${c.listenPort}`,
+      (item) => `${item.bindIp}:${item.listenPort}`,
+      HISTORY_LIMITS.network,
     );
   }
 
   // 添加 UDP 历史配置
   function addUdpHistory(config: UdpHistoryConfig) {
-    udpHistory = addToHistory(
+    udpHistory = upsertRecentItem(
       udpHistory,
       config,
-      (c) => `${c.remoteHost}:${c.remotePort}:${c.localPort}`,
+      (item) => `${item.remoteHost}:${item.remotePort}:${item.localPort}`,
+      HISTORY_LIMITS.network,
     );
   }
 
@@ -291,12 +384,63 @@
     localPort = config.localPort;
   }
 
+  // 连接控制器，用于取消连接
+  let connectController: AbortController | null = null;
+
   // 连接/断开
   async function toggleConnection() {
-    if (isConnected) {
+    if (isConnecting) {
+      // 如果正在连接中，取消连接
+      cancelConnect();
+    } else if (isConnected) {
       await disconnect();
     } else {
       await connect();
+    }
+  }
+
+  // 取消连接
+  function cancelConnect() {
+    if (connectController) {
+      connectController.abort();
+    }
+    // 立即清理 transceiver
+    if (transceiver) {
+      try {
+        transceiver.offAllCallbacks();
+        transceiver.disconnect().catch(() => {}); // 异步断开，不等待
+      } catch (e) {
+        // 忽略
+      }
+      transceiver = null;
+    }
+    if (lockedSerialPort) {
+      releaseSerialPortLock({
+        windowLabel: currentWindowLabel,
+        portPath: lockedSerialPort,
+      }).catch(() => {});
+      lockedSerialPort = null;
+    }
+    isConnecting = false;
+    connectController = null;
+    appendSystemMessage("连接已取消");
+  }
+
+  async function releaseLockedSerialPort() {
+    if (!lockedSerialPort) {
+      return;
+    }
+
+    const portPath = lockedSerialPort;
+    lockedSerialPort = null;
+
+    try {
+      await releaseSerialPortLock({
+        windowLabel: currentWindowLabel,
+        portPath,
+      });
+    } catch (error) {
+      console.error("释放串口锁失败:", error);
     }
   }
 
@@ -304,51 +448,46 @@
     // 如果正在连接中，忽略
     if (isConnecting) return;
 
+    // 创建新的 AbortController
+    connectController = new AbortController();
+    const signal = connectController.signal;
+
     // 清理旧的 transceiver
     if (transceiver) {
       transceiver.offAllCallbacks();
-      await transceiver.disconnect();
+      try {
+        await transceiver.disconnect();
+      } catch (e) {
+        // 忽略
+      }
       transceiver = null;
     }
+    await releaseLockedSerialPort();
 
     isConnecting = true;
+    appendSystemMessage("正在连接...");
     try {
       if (connectionType === "serial") {
-        const config: SerialConfig = {
-          port: selectedPort,
-          baudRate: parseInt(baudRate),
-          dataBits: dataBits === "7" ? DataBits.Seven : DataBits.Eight,
-          stopBits: stopBits === "1" ? StopBits.One : StopBits.Two,
-          parity:
-            parity === "Odd"
-              ? Parity.Odd
-              : parity === "Even"
-                ? Parity.Even
-                : Parity.None,
-          flowControl: FlowControl.None,
-        };
-        transceiver = new SerialTransceiver(config);
-      } else if (connectionType === "tcp") {
-        const config: TcpClientConfig = {
-          remoteHost: ipAddress,
-          remotePort: parseInt(port),
-          localPort: localPort ? parseInt(localPort) : undefined,
-        };
-        transceiver = new TcpClientTransceiver(config);
-      } else if (connectionType === "tcpserver") {
-        const config: TcpServerConfig = {
-          bindHost: tcpServerBindIp || "0.0.0.0",
-          listenPort: parseInt(tcpServerPort),
-        };
-        transceiver = new TcpServerTransceiver(config);
-      } else if (connectionType === "udp") {
-        const config: UdpConfig = {
-          remoteHost: ipAddress,
-          remotePort: parseInt(port),
-          localPort: parseInt(localPort) || 0,
-        };
-        transceiver = new UdpTransceiver(config);
+        await acquireSerialPortLock({
+          windowLabel: currentWindowLabel,
+          portPath: selectedPort,
+        });
+        lockedSerialPort = selectedPort;
       }
+
+      transceiver = createTransceiver({
+        connectionType,
+        selectedPort,
+        baudRate,
+        dataBits,
+        stopBits,
+        parity,
+        ipAddress,
+        port,
+        localPort,
+        tcpServerPort,
+        tcpServerBindIp,
+      });
 
       if (transceiver) {
         // 设置数据回调
@@ -367,7 +506,32 @@
           appendSystemMessage("连接已断开");
         });
 
-        await transceiver.connect();
+        // 检查是否已取消
+        if (signal.aborted) {
+          throw new Error("连接已取消");
+        }
+
+        // 带超时的连接
+        const connectPromise = transceiver.connect();
+        const timeoutPromise = new Promise<never>((_, reject) => {
+          const timer = setTimeout(() => {
+            reject(new Error(`连接超时 (${CONNECTION_TIMEOUT / 1000}秒)`));
+          }, CONNECTION_TIMEOUT);
+
+          // 如果被取消，清除定时器
+          signal.addEventListener("abort", () => {
+            clearTimeout(timer);
+            reject(new Error("连接已取消"));
+          });
+        });
+
+        await Promise.race([connectPromise, timeoutPromise]);
+
+        // 再次检查是否已取消
+        if (signal.aborted) {
+          throw new Error("连接已取消");
+        }
+
         isConnected = true;
         appendSystemMessage("连接成功");
 
@@ -401,15 +565,29 @@
     } catch (error) {
       console.error("连接失败:", error);
       appendSystemMessage(`连接失败: ${error}`);
-      transceiver = null;
+      // 清理可能部分初始化的 transceiver
+      if (transceiver) {
+        try {
+          transceiver.offAllCallbacks();
+          await transceiver.disconnect();
+        } catch (e) {
+          // 忽略清理错误
+        }
+        transceiver = null;
+      }
+      await releaseLockedSerialPort();
     } finally {
       isConnecting = false;
+      connectController = null;
     }
   }
 
   async function disconnect() {
-    // 如果正在连接中，忽略
-    if (isConnecting) return;
+    // 如果正在连接中，调用取消连接
+    if (isConnecting) {
+      cancelConnect();
+      return;
+    }
 
     // 停止定时发送
     stopTimer();
@@ -423,11 +601,13 @@
         await transceiver.disconnect();
         transceiver = null;
       }
+      await releaseLockedSerialPort();
       isConnected = false;
       appendSystemMessage("已断开连接");
     } catch (error) {
       console.error("断开失败:", error);
       appendSystemMessage(`断开失败: ${error}`);
+      await releaseLockedSerialPort();
     }
   }
 
@@ -675,6 +855,11 @@
     dataLines = [];
     rxBytes = 0;
     txBytes = 0;
+    // 清除选中状态
+    selStartLine = null;
+    selStartByte = null;
+    selEndLine = null;
+    selEndByte = null;
   }
 
   // 启动定时发送
@@ -1010,12 +1195,76 @@
     return false;
   }
 
+  // 格式化 HEX 显示
+  function formatHex(data: Uint8Array): string {
+    return Array.from(data)
+      .map((b) => b.toString(16).padStart(2, "0").toUpperCase())
+      .join(" ");
+  }
+
+  function getNativeSelectionText(): string {
+    return window.getSelection?.()?.toString().trim() ?? "";
+  }
+
+  function hasCustomSelection(): boolean {
+    return normalizedSelection !== null;
+  }
+
+  function hasNativeSelection(): boolean {
+    return getNativeSelectionText().length > 0;
+  }
+
+  /** 获取过滤后的数据行（派生状态的函数形式，用于模板中） */
+  function getFilteredDataLines(): Array<{
+    line: DataLine;
+    originalIndex: number;
+  }> {
+    return filteredDataLines;
+  }
+
   // 清除选中
   function clearSelection() {
     selStartLine = null;
     selStartByte = null;
     selEndLine = null;
     selEndByte = null;
+    window.getSelection?.()?.removeAllRanges();
+  }
+
+  function selectAllReceiveContent() {
+    if (showHexArea) {
+      const visibleDataLines = getFilteredDataLines().filter(
+        (item) => item.line.data && item.line.data.length > 0,
+      );
+
+      if (visibleDataLines.length === 0) {
+        return;
+      }
+
+      const firstLine = visibleDataLines[0];
+      const lastLine = visibleDataLines[visibleDataLines.length - 1];
+
+      selStartLine = firstLine.originalIndex;
+      selStartByte = 0;
+      selEndLine = lastLine.originalIndex;
+      selEndByte = lastLine.line.data!.length - 1;
+      receiveContainer?.focus();
+      return;
+    }
+
+    if (!receiveContainer) {
+      return;
+    }
+
+    const selection = window.getSelection?.();
+    if (!selection) {
+      return;
+    }
+
+    const range = document.createRange();
+    range.selectNodeContents(receiveContainer);
+    selection.removeAllRanges();
+    selection.addRange(range);
   }
 
   // 获取选中的所有字节数据
@@ -1058,6 +1307,18 @@
 
   // 复制选中的数据
   async function copySelectedData() {
+    const nativeSelection = getNativeSelectionText();
+    if (nativeSelection) {
+      try {
+        await navigator.clipboard.writeText(nativeSelection);
+        appendSystemMessage(`已复制文本 (${nativeSelection.length} 字符)`);
+      } catch (error) {
+        console.error("复制失败:", error);
+        appendSystemMessage(`复制失败: ${error}`);
+      }
+      return;
+    }
+
     const selectedBytes = getSelectedBytes();
     if (selectedBytes.length === 0) {
       return;
@@ -1114,26 +1375,28 @@
     }
   }
 
-  // HEX区右键菜单
-  function handleHexContextMenu(event: MouseEvent) {
-    if (selStartLine !== null && selStartByte !== null && selEndByte !== null) {
-      event.preventDefault();
-      contextMenuType = "hex";
-      contextMenuX = event.clientX;
-      contextMenuY = event.clientY;
-      contextMenuVisible = true;
-    }
-  }
+  function openReceiveContextMenu(
+    event: MouseEvent,
+    type: "text" | "hex",
+    selection?: {
+      line: number;
+      startByte: number;
+      endByte: number;
+    },
+  ) {
+    event.preventDefault();
 
-  // 文本区右键菜单
-  function handleTextContextMenu(event: MouseEvent) {
-    if (selStartLine !== null && selStartByte !== null && selEndByte !== null) {
-      event.preventDefault();
-      contextMenuType = "text";
-      contextMenuX = event.clientX;
-      contextMenuY = event.clientY;
-      contextMenuVisible = true;
+    if (selection) {
+      selStartLine = selection.line;
+      selStartByte = selection.startByte;
+      selEndLine = selection.line;
+      selEndByte = selection.endByte;
     }
+
+    contextMenuType = type;
+    contextMenuX = event.clientX;
+    contextMenuY = event.clientY;
+    contextMenuVisible = true;
   }
 
   // 关闭右键菜单
@@ -1143,11 +1406,22 @@
 
   // 右键菜单复制操作
   function handleContextMenuCopy() {
-    if (contextMenuType === "hex") {
-      copySelectedHex();
-    } else {
-      copySelectedData();
-    }
+    copySelectedData();
+    closeContextMenu();
+  }
+
+  function handleContextMenuCopyHex() {
+    copySelectedHex();
+    closeContextMenu();
+  }
+
+  function handleContextMenuSelectAll() {
+    selectAllReceiveContent();
+    closeContextMenu();
+  }
+
+  function handleContextMenuClearSelection() {
+    clearSelection();
     closeContextMenu();
   }
 
@@ -1155,10 +1429,14 @@
   function handleKeydown(event: KeyboardEvent) {
     // Ctrl+C 复制
     if ((event.ctrlKey || event.metaKey) && event.key === "c") {
-      if (normalizedSelection !== null) {
+      if (hasCustomSelection() || hasNativeSelection()) {
         event.preventDefault();
         copySelectedData();
       }
+    }
+    if ((event.ctrlKey || event.metaKey) && event.key === "a") {
+      event.preventDefault();
+      selectAllReceiveContent();
     }
     // Escape 取消选中
     if (event.key === "Escape") {
@@ -1167,34 +1445,7 @@
   }
 
   // 设置持久化
-  const SETTINGS_KEY = "serialmate_settings";
-
-  interface AppSettings {
-    connectionType: "serial" | "tcp" | "tcpserver" | "udp";
-    selectedPort: string;
-    baudRate: string;
-    dataBits: string;
-    stopBits: string;
-    parity: string;
-    rtsEnabled: boolean;
-    dtrEnabled: boolean;
-    ipAddress: string;
-    port: string;
-    localPort: string;
-    tcpServerPort: string;
-    tcpServerBindIp: string;
-    autoScroll: boolean;
-    showTimestamp: boolean;
-    hexSend: boolean;
-    showHexArea: boolean;
-    lineEnding: "none" | "crlf" | "cr" | "lf";
-    textEncoding: "gb2312" | "utf-8" | "gbk" | "big5" | "ascii";
-    timerInterval: number;
-    commandHistory: string[];
-    tcpHistory: TcpHistoryConfig[];
-    tcpServerHistory: TcpServerHistoryConfig[];
-    udpHistory: UdpHistoryConfig[];
-  }
+  const SETTINGS_KEY = `serialmate_settings_${currentWindowLabel}`;
 
   function loadSettings() {
     try {
@@ -1299,6 +1550,7 @@
       if (unlistenUsb) {
         unlistenUsb();
       }
+      releaseWindowSerialPortLocks(currentWindowLabel).catch(() => {});
     };
   });
 
@@ -1452,9 +1704,12 @@
           : "串口调试助手"}</span
       >
     </div>
-    <div class="header-stats">
+    <div class="header-actions">
+      <button class="header-btn" onclick={openNewWindow}>新建窗口</button>
+      <div class="header-stats">
       <span>RX: {rxBytes}</span>
       <span>TX: {txBytes}</span>
+      </div>
     </div>
   </header>
 
@@ -1532,6 +1787,7 @@
           <!-- svelte-ignore a11y_no_static_element_interactions -->
           <div
             id="receive-container"
+            bind:this={receiveContainer}
             class="receive-container"
             onkeydown={handleKeydown}
             onmousedown={(e) => {
@@ -1544,6 +1800,7 @@
                 clearSelection();
               }
             }}
+            oncontextmenu={(e) => openReceiveContextMenu(e, "text")}
             tabindex="0"
             role="textbox"
             aria-label="接收数据区域"
@@ -1588,22 +1845,18 @@
                             }
                           }}
                           oncontextmenu={(e) => {
-                            e.preventDefault();
-                            if (selStartLine === null) {
-                              selStartLine = originalIndex;
-                              selStartByte = item.startIdx;
-                              selEndLine = originalIndex;
-                              selEndByte = item.endIdx;
-                            }
-                            contextMenuType = "text";
-                            contextMenuX = e.clientX;
-                            contextMenuY = e.clientY;
-                            contextMenuVisible = true;
+                            openReceiveContextMenu(e, "text", {
+                              line: originalIndex,
+                              startByte: item.startIdx,
+                              endByte: item.endIdx,
+                            });
                           }}>{item.char}</span
                         >{/each}</span
                     >
                   {:else}
-                    <span class="system-text"
+                    <span
+                      class="system-text"
+                      oncontextmenu={(e) => openReceiveContextMenu(e, "text")}
                       >{@html highlightSystemText(line.text)}</span
                     >
                   {/if}
@@ -1638,17 +1891,11 @@
                             }
                           }}
                           oncontextmenu={(e) => {
-                            e.preventDefault();
-                            if (selStartLine === null) {
-                              selStartLine = originalIndex;
-                              selStartByte = byteIdx;
-                              selEndLine = originalIndex;
-                              selEndByte = byteIdx;
-                            }
-                            contextMenuType = "hex";
-                            contextMenuX = e.clientX;
-                            contextMenuY = e.clientY;
-                            contextMenuVisible = true;
+                            openReceiveContextMenu(e, "hex", {
+                              line: originalIndex,
+                              startByte: byteIdx,
+                              endByte: byteIdx,
+                            });
                           }}
                           >{byte
                             .toString(16)
@@ -1668,8 +1915,18 @@
           </div>
         {:else}
           <!-- 纯文本模式：使用 div 显示以支持高亮 -->
-          <div id="receive-container" class="receive-container text-mode">
-            {#each filteredDataLines as { line }}
+          <div
+            id="receive-container"
+            bind:this={receiveContainer}
+            class="receive-container text-mode"
+            onkeydown={handleKeydown}
+            oncontextmenu={(e) => openReceiveContextMenu(e, "text")}
+            tabindex="0"
+            role="textbox"
+            aria-label="接收数据区域"
+            aria-readonly="true"
+          >
+            {#each getFilteredDataLines() as { line }}
               <div class="text-line {line.direction}">
                 {#if showTimestamp && line.timestamp}
                   <span class="timestamp">[{line.timestamp}]</span>
@@ -1686,7 +1943,9 @@
                     >{@html highlightDataText(line.data)}</span
                   >
                 {:else}
-                  <span class="system-text"
+                  <span
+                    class="system-text"
+                    oncontextmenu={(e) => openReceiveContextMenu(e, "text")}
                     >{@html highlightSystemText(line.text)}</span
                   >
                 {/if}
@@ -1745,7 +2004,7 @@
                     title={selectedPort}
                   >
                     {#each serialPorts as p}
-                      <option value={p} title={p}>{p}</option>
+                      <option value={p.path} title={p.path}>{p.label}</option>
                     {/each}
                   </select>
                   <button class="icon-btn" onclick={refreshPorts} title="刷新"
@@ -1986,12 +2245,13 @@
 
         <!-- 连接按钮 -->
         <button
-          class="connect-btn {isConnected ? 'connected' : ''}"
+          class="connect-btn {isConnected ? 'connected' : ''} {isConnecting
+            ? 'connecting'
+            : ''}"
           onclick={toggleConnection}
-          disabled={isConnecting}
         >
           {#if isConnecting}
-            连接中...
+            取消连接
           {:else if connectionType === "tcpserver"}
             {isConnected ? "停止" : "监听"}
           {:else}
@@ -2133,9 +2393,35 @@
     <button
       class="context-menu-item"
       onclick={handleContextMenuCopy}
+      disabled={!hasCustomSelection() && !hasNativeSelection()}
       style="display: block; width: 100%; padding: 0.5rem 1rem; text-align: left; background: none; border: none; cursor: pointer; font-size: 0.85rem; color: #374151;"
     >
-      📋 复制{contextMenuType === "hex" ? " HEX" : ""}
+      📋 复制文本
+    </button>
+    {#if contextMenuType === "hex"}
+      <button
+        class="context-menu-item"
+        onclick={handleContextMenuCopyHex}
+        disabled={!hasCustomSelection()}
+        style="display: block; width: 100%; padding: 0.5rem 1rem; text-align: left; background: none; border: none; cursor: pointer; font-size: 0.85rem; color: #374151;"
+      >
+        📋 复制 HEX
+      </button>
+    {/if}
+    <button
+      class="context-menu-item"
+      onclick={handleContextMenuSelectAll}
+      style="display: block; width: 100%; padding: 0.5rem 1rem; text-align: left; background: none; border: none; cursor: pointer; font-size: 0.85rem; color: #374151;"
+    >
+      选择全部
+    </button>
+    <button
+      class="context-menu-item"
+      onclick={handleContextMenuClearSelection}
+      disabled={!hasCustomSelection() && !hasNativeSelection()}
+      style="display: block; width: 100%; padding: 0.5rem 1rem; text-align: left; background: none; border: none; cursor: pointer; font-size: 0.85rem; color: #374151;"
+    >
+      取消选择
     </button>
   </div>
 {/if}

@@ -56,15 +56,17 @@ jobs:
           prerelease: false
 
   build-macos:
-    runs-on: macos-latest
+    runs-on: ${{ matrix.runs-on }}
     strategy:
       matrix:
         target: [x86_64-apple-darwin, aarch64-apple-darwin]
         include:
           - target: x86_64-apple-darwin
             arch: x64
+            runs-on: macos-13  # Intel runner
           - target: aarch64-apple-darwin
             arch: arm64
+            runs-on: macos-15  # Apple Silicon runner (M4 Pro 原生)
 
     steps:
       - name: Checkout repository
