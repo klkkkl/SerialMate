@@ -64,6 +64,9 @@
 | macOS | Intel | `serialmate_x.x.x_x64.dmg` |
 | macOS | Apple Silicon | `serialmate_x.x.x_aarch64.dmg` |
 
+Apple Silicon 机型请下载 `aarch64` / `arm64` 包，不要安装 `x64` 的 Intel 版本。
+如果 macOS 提示应用无法打开、已损坏或需要移到废纸篓，通常不是程序本体坏了，而是安装包没有完成 Apple 开发者签名和公证。
+
 ### 从源码构建
 
 请参考下方 [开发指南](#开发指南)。
