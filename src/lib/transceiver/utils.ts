@@ -26,13 +26,3 @@ export function hexStringToBytes(hex: string): Uint8Array {
   if (!bytes) return new Uint8Array();
   return new Uint8Array(bytes.map((byte) => parseInt(byte, 16)));
 }
-
-// 辅助函数：将字符串转换为 Uint8Array
-export function stringToBytes(str: string): Uint8Array {
-  return new TextEncoder().encode(str);
-}
-
-// 辅助函数：将 Uint8Array 转换为字符串（用于发送）
-export function bytesToString(data: Uint8Array): string {
-  return String.fromCharCode(...data);
-}

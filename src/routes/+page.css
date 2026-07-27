@@ -604,26 +604,6 @@
     line-height: 1.3;
 }
 
-/* 纯文本模式的 textarea */
-.receive-textarea {
-    flex: 1;
-    width: 100%;
-    border: none;
-    outline: none;
-    resize: none;
-    background: transparent;
-    font-family: "Consolas", "Monaco", "Courier New", monospace;
-    font-size: 0.85rem;
-    line-height: 1.3;
-    padding: 0.3rem 0.5rem;
-    color: #2c3e50;
-    user-select: text;
-}
-
-.receive-textarea::placeholder {
-    color: #a0aec0;
-}
-
 /* 纯文本模式 div 容器 */
 .receive-container.text-mode {
     padding: 0.3rem 0.5rem;

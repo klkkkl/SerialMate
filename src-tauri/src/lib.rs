@@ -93,11 +93,6 @@ mod usb_monitor {
 }
 
 #[tauri::command]
-fn greet(name: &str) -> String {
-    format!("Hello, {}! You've been greeted from Rust!", name)
-}
-
-#[tauri::command]
 fn get_local_ips() -> Vec<String> {
     let mut ips = vec!["0.0.0.0".to_string(), "127.0.0.1".to_string()];
 
@@ -233,7 +228,6 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .manage(SerialPortLocks::default())
         .invoke_handler(tauri::generate_handler![
-            greet,
             get_local_ips,
             acquire_serial_port_lock,
             release_serial_port_lock,

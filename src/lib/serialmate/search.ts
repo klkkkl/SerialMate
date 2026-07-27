@@ -1,10 +1,11 @@
-import { formatHex } from "./encoding";
+import { decodeText, formatHex } from "./encoding";
 import type {
   CharItem,
   DataLine,
   FilterDirection,
   IndexedDataLine,
   SearchMode,
+  TextEncoding,
 } from "./types";
 
 interface FilterDataLinesOptions {
@@ -12,11 +13,15 @@ interface FilterDataLinesOptions {
   filterDirection: FilterDirection;
   searchText: string;
   searchMode: SearchMode;
-  formatText: (data: Uint8Array) => string;
+  encoding: TextEncoding;
 }
 
 function normalizeHexQuery(query: string): string {
   return query.trim().toLowerCase().replace(/\s+/g, "");
+}
+
+function packedHex(data: Uint8Array): string {
+  return formatHex(data).toLowerCase().replace(/\s+/g, "");
 }
 
 function escapeHtml(text: string): string {
@@ -48,7 +53,7 @@ export function filterDataLines({
   filterDirection,
   searchText,
   searchMode,
-  formatText,
+  encoding,
 }: FilterDataLinesOptions): IndexedDataLine[] {
   let result = lines.map((line, originalIndex) => ({ line, originalIndex }));
 
@@ -61,6 +66,8 @@ export function filterDataLines({
     return result;
   }
 
+  const hexQuery = normalizeHexQuery(searchText);
+
   return result.filter(({ line }) => {
     if (line.type === "system") {
       return line.text.toLowerCase().includes(normalizedQuery);
@@ -71,100 +78,92 @@ export function filterDataLines({
     }
 
     if (searchMode === "hex") {
-      const hexData = formatHex(line.data).toLowerCase().replace(/\s+/g, "");
-      return hexData.includes(normalizeHexQuery(searchText));
+      return packedHex(line.data).includes(hexQuery);
     }
 
-    return formatText(line.data).toLowerCase().includes(normalizedQuery);
+    return decodeText(line.data, encoding)
+      .toLowerCase()
+      .includes(normalizedQuery);
   });
 }
 
-export function isByteInHexSearchMatch(
+/**
+ * 为一行数据的每个字节标记是否命中 HEX 搜索。
+ * 每行只扫描一次，避免逐字节重复匹配。
+ */
+export function hexMatchFlags(
   data: Uint8Array,
-  byteIdx: number,
   searchText: string,
-): boolean {
+): boolean[] {
+  const flags = new Array<boolean>(data.length).fill(false);
   const query = normalizeHexQuery(searchText);
   if (!query) {
-    return false;
+    return flags;
   }
 
-  const normalizedHex = formatHex(data).toLowerCase().replace(/\s+/g, "");
+  const hex = packedHex(data);
   let matchPos = 0;
 
-  while ((matchPos = normalizedHex.indexOf(query, matchPos)) !== -1) {
+  while ((matchPos = hex.indexOf(query, matchPos)) !== -1) {
     const startByte = Math.floor(matchPos / 2);
-    const endByte = Math.ceil((matchPos + query.length) / 2) - 1;
+    const endByte = Math.min(
+      Math.ceil((matchPos + query.length) / 2) - 1,
+      data.length - 1,
+    );
 
-    if (byteIdx >= startByte && byteIdx <= endByte) {
-      return true;
+    for (let byteIdx = startByte; byteIdx <= endByte; byteIdx++) {
+      flags[byteIdx] = true;
     }
 
     matchPos++;
   }
 
-  return false;
+  return flags;
 }
 
-export function isCharInTextSearchMatch(
-  data: Uint8Array,
-  item: CharItem,
+/**
+ * 为一行数据的每个字符项标记是否命中文本搜索。
+ * 字符与文本偏移的映射只建立一次。
+ */
+export function charMatchFlags(
+  chars: CharItem[],
   searchText: string,
-  formatText: (data: Uint8Array) => string,
-  parseChars: (data: Uint8Array) => CharItem[],
-): boolean {
+): boolean[] {
+  const flags = new Array<boolean>(chars.length).fill(false);
   const query = searchText.trim().toLowerCase();
   if (!query) {
-    return false;
+    return flags;
   }
 
-  const text = formatText(data).toLowerCase();
-  const chars = parseChars(data);
-  const itemIdx = chars.findIndex(
-    (char) => char.startIdx === item.startIdx && char.endIdx === item.endIdx,
-  );
+  // 用小写片段拼接文本，保证偏移量与查找用的文本一致
+  const offsets: number[] = [];
+  const lengths: number[] = [];
+  let text = "";
 
-  if (itemIdx === -1) {
-    return false;
+  for (const item of chars) {
+    const lowered = item.char.toLowerCase();
+    offsets.push(text.length);
+    lengths.push(lowered.length);
+    text += lowered;
   }
 
   let matchPos = 0;
   while ((matchPos = text.indexOf(query, matchPos)) !== -1) {
     const matchEnd = matchPos + query.length - 1;
-    let currentTextPos = 0;
-    let charStartIdx = -1;
-    let charEndIdx = -1;
 
     for (let index = 0; index < chars.length; index++) {
-      const charLength = chars[index].char.length;
+      const charStart = offsets[index];
+      const charEnd = charStart + lengths[index] - 1;
 
-      if (
-        charStartIdx === -1 &&
-        currentTextPos <= matchPos &&
-        matchPos < currentTextPos + charLength
-      ) {
-        charStartIdx = index;
+      if (charEnd >= matchPos && charStart <= matchEnd) {
+        flags[index] = true;
       }
-
-      if (
-        currentTextPos <= matchEnd &&
-        matchEnd < currentTextPos + charLength
-      ) {
-        charEndIdx = index;
-        break;
-      }
-
-      currentTextPos += charLength;
-    }
-
-    if (itemIdx >= charStartIdx && itemIdx <= charEndIdx) {
-      return true;
     }
 
     matchPos++;
   }
 
-  return false;
+  return flags;
 }
 
 export function highlightMatch(text: string, searchText: string): string {
