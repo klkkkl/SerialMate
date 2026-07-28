@@ -852,6 +852,13 @@
 
   // 清空接收区
   function clearReceive() {
+    // 清空所有待处理的批处理数据
+    pendingLines = [];
+    rafScheduled = false;
+    if (maxLatencyTimer) {
+      clearTimeout(maxLatencyTimer);
+      maxLatencyTimer = null;
+    }
     dataLines = [];
     rxBytes = 0;
     txBytes = 0;
@@ -930,7 +937,91 @@
   // 最大保留行数
   const MAX_DATA_LINES = 5000;
 
-  // 添加数据行（带自动清理）
+  // 接收数据批处理：使用 requestAnimationFrame 限制 UI 更新频率（对标串口插件的 200ms 累积）
+  // 同时设置最大延迟保障，避免数据长时间不显示
+  let pendingLines: DataLine[] = [];
+  let rafScheduled = false;
+  let maxLatencyTimer: ReturnType<typeof setTimeout> | null = null;
+  const MAX_BATCH_LATENCY = 100; // 最大批处理延迟（毫秒）
+
+  function scheduleFlush() {
+    if (rafScheduled) return;
+    rafScheduled = true;
+
+    // 配合浏览器渲染周期刷新（通常 16ms，即 60fps）
+    requestAnimationFrame(() => {
+      rafScheduled = false;
+      if (maxLatencyTimer) {
+        clearTimeout(maxLatencyTimer);
+        maxLatencyTimer = null;
+      }
+      flushPendingLines();
+    });
+
+    // 保障最大延迟：即使 rAF 被阻塞，也在 MAX_BATCH_LATENCY 内刷新
+    if (!maxLatencyTimer) {
+      maxLatencyTimer = setTimeout(() => {
+        maxLatencyTimer = null;
+        if (rafScheduled) {
+          rafScheduled = false;
+          flushPendingLines();
+        }
+      }, MAX_BATCH_LATENCY);
+    }
+  }
+
+  function flushPendingLines() {
+    if (pendingLines.length === 0) return;
+
+    const lines = pendingLines;
+    pendingLines = [];
+
+    if (dataLines.length + lines.length > MAX_DATA_LINES) {
+      dataLines = [
+        ...dataLines.slice(-Math.floor(MAX_DATA_LINES / 2)),
+        ...lines,
+      ];
+    } else {
+      dataLines = [...dataLines, ...lines];
+    }
+    scheduleScrollToBottom();
+  }
+
+  // 用于发送操作或断开时立即刷新（保持 TX 的即时性和系统消息的时序正确）
+  function flushPendingLinesSync() {
+    if (pendingLines.length > 0) {
+      const lines = pendingLines;
+      pendingLines = [];
+      rafScheduled = false;
+      if (maxLatencyTimer) {
+        clearTimeout(maxLatencyTimer);
+        maxLatencyTimer = null;
+      }
+
+      if (dataLines.length + lines.length > MAX_DATA_LINES) {
+        dataLines = [
+          ...dataLines.slice(-Math.floor(MAX_DATA_LINES / 2)),
+          ...lines,
+        ];
+      } else {
+        dataLines = [...dataLines, ...lines];
+      }
+    }
+  }
+
+  // 滚动到底部（去重）
+  let scrollScheduled = false;
+  function scheduleScrollToBottom() {
+    if (!autoScroll || scrollScheduled) return;
+    scrollScheduled = true;
+    queueMicrotask(() => {
+      scrollScheduled = false;
+      const container = document.getElementById("receive-container");
+      if (container) container.scrollTop = container.scrollHeight;
+    });
+  }
+
+  // 添加数据行（带自动清理和批处理）
   function formatTimestamp(): string {
     const now = new Date();
     return `${now.toLocaleTimeString()}.${now.getMilliseconds().toString().padStart(3, "0")}`;
@@ -944,17 +1035,28 @@
       text: "",
       timestamp: showTimestamp ? formatTimestamp() : undefined,
     };
-    // 超过最大行数时保留后半部分
-    if (dataLines.length >= MAX_DATA_LINES) {
-      dataLines = [...dataLines.slice(-Math.floor(MAX_DATA_LINES / 2)), line];
+    if (type === "rx") {
+      // 接收数据：加入批处理队列，延迟更新
+      pendingLines.push(line);
+      scheduleFlush();
     } else {
-      dataLines = [...dataLines, line];
+      // 发送数据：立即更新（用户主动操作需要即时反馈）
+      flushPendingLinesSync();
+      // 超过最大行数时保留后半部分
+      if (dataLines.length >= MAX_DATA_LINES) {
+        dataLines = [...dataLines.slice(-Math.floor(MAX_DATA_LINES / 2)), line];
+      } else {
+        dataLines = [...dataLines, line];
+      }
+      scheduleScrollToBottom();
     }
-    scrollToBottom();
   }
 
   // 添加系统消息
   function appendSystemMessage(text: string) {
+    // 系统消息之前先刷新 pending 的接收数据，保持时序正确
+    flushPendingLinesSync();
+
     const line: DataLine = {
       type: "system",
       direction: "system",
@@ -968,17 +1070,7 @@
     } else {
       dataLines = [...dataLines, line];
     }
-    scrollToBottom();
-  }
-
-  // 滚动到底部
-  function scrollToBottom() {
-    if (autoScroll) {
-      setTimeout(() => {
-        const container = document.getElementById("receive-container");
-        if (container) container.scrollTop = container.scrollHeight;
-      }, 10);
-    }
+    scheduleScrollToBottom();
   }
 
   // 使用 iconv-lite 编码文本
